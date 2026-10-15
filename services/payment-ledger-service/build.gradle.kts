@@ -3,7 +3,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":libs:platform-web-starter"))
+    implementation(project(":libs:platform-mvc-starter"))
     implementation(project(":libs:platform-lock-starter"))
     implementation(project(":libs:platform-http-client-starter"))
     implementation(project(":libs:platform-observability-starter"))

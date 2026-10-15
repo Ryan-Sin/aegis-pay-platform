@@ -3,7 +3,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":libs:platform-web-starter"))
+    implementation(project(":libs:platform-mvc-starter"))
     implementation(project(":libs:platform-observability-starter"))
 
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")

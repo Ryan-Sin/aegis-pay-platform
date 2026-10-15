@@ -1,7 +1,9 @@
 rootProject.name = "aegis-pay-platform"
 
 include(
-    "libs:platform-web-starter",
+    "libs:platform-core",
+    "libs:platform-mvc-starter",
+    "libs:platform-webflux-starter",
     "libs:platform-lock-starter",
     "libs:platform-http-client-starter",
     "libs:platform-observability-starter",

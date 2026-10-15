@@ -10,8 +10,8 @@
    - Stateless API Gateway에서의 JWKS 로컬 캐싱(Caffeine)과 Key Rotation(`kid`), 토큰 즉시 무효화(Blacklist) 트레이드오프 해결
    - 외부 유입 헤더 스푸핑 원천 차단(Sanitize) 및 내부 신뢰 헤더 전파 아키텍처
 2. **초고트래픽 동시성 제어 & 원장 정합성 (High Concurrency & ACID)**
-   - 외부 카드사(VAN) 네트워크 대기 시간(1~3초) 동안 DB 커넥션 풀 고갈을 막기 위해 DB 비관적 락(`FOR UPDATE`) 앞단에 Valkey/Redis 분산 락을 배치하는 아키텍처
-   - Spring CGLIB 바이트코드 프록시 체인 원리 이해 및 `@DistributedLock`과 `@Transactional` 간의 Race Condition(커밋 전 락 해제 버그) 해결, Self-Invocation(`this`) 함정 회피
+   - 외부 카드사(VAN) 네트워크 대기 시간(1~3초) 동안 DB 커넥션 풀(HikariCP) 고갈을 막기 위해, `@DistributedLock` 구간에서는 DB 트랜잭션을 열지 않고 순수 Valkey/Redis 분산 락만 선점하는 **락-트랜잭션 분리 아키텍처**
+   - Spring CGLIB 바이트코드 프록시 체인 원리 이해: `1. Valkey 락 획득 -> 2. 멱등성 단순 조회 -> 3. 외부 VAN 호출(No DB Tx) -> 4. 내부 짧은 @Transactional로 원장/Outbox 기록 및 즉시 COMMIT -> 5. finally에서 Valkey 락 반납`으로 커넥션 풀 고갈과 커밋 전 락 해제 버그를 동시에 해결
    - `Idempotency-Key` 헤더 기반 멱등성 보장과 복식부기 원장(Ledger) 기록 및 오프라인 SAF(Store & Forward) 배치 동기화
 3. **무손실 실시간 데이터 파이프라인 (Streaming & Pipeline)**
    - RDBMS와 Kafka 간의 이중 쓰기(Dual Write) 문제를 해결하는 Transactional Outbox 패턴 구현
@@ -39,11 +39,13 @@
    - **Header Sanitizer**: 해커가 위조해 보낸 외부의 모든 `X-Terminal-*`, `X-Store-*` 헤더를 입구에서 강제 삭제(Strip).
    - **Local JWKS Verification**: `auth-service`를 매번 호출하지 않고, Gateway 자신의 JVM 로컬 캐시(Caffeine)에 보관된 **인증 서버 공개키(1개)**로 JWT 서명을 0.01ms 만에 검증 (`kid` 미스매치 시 Single-Flight로 JWKS 갱신).
    - **Header Injection**: 검증된 JWT Payload에서 추출한 진짜 `X-Terminal-Id`, `X-Store-Id`, `X-Terminal-Scopes`를 헤더에 주입하여 `payment-ledger-service`로 라우팅.
-3. `payment-ledger-service`의 동시성 제어 및 원장 기록:
+3. `payment-ledger-service`의 동시성 제어 및 원장 기록 (DB 커넥션 풀 보호 플로우):
    - `@CurrentTerminal` ArgumentResolver로 신뢰 헤더 추출.
-   - `@DistributedLock(key = "#idempotencyKey")` AOP 가동 -> Redisson Pub/Sub 기반 락 획득 -> `AopForTransaction`(`Propagation.REQUIRES_NEW`)을 통해 내부 트랜잭션 시작.
-   - `mock-van-server`로 승인 요청 (`platform-http-client-starter`의 서킷브레이커/타임아웃 보호 적용).
-   - 승인 성공 시 원장(Ledger) 테이블과 `outbox_events` 테이블(현재 OTel `traceparent` 포함)에 단일 트랜잭션으로 저장 후 **DB 커밋이 완전히 끝난 뒤 finally에서 Redis 락 해제**.
+   - **Step 1 (Redis 락 획득)**: `@DistributedLock(key = "#idempotencyKey")` AOP 가동 -> Redisson Pub/Sub 기반 락 획득 (이 시점에는 DB 트랜잭션을 열지 않음!).
+   - **Step 2 (결제 진행 여부 확인)**: DB Lock 없이 단순 조회로 이미 처리된 결제인지 빠르게 확인 후 DB 커넥션 즉시 반납.
+   - **Step 3 (외부 VAN사 호출)**: `mock-van-server`로 승인 요청 (1~3초 네트워크 대기 동안 DB 커넥션 점유 0개!).
+   - **Step 4 & 5 (짧은 DB 트랜잭션 기록 및 COMMIT)**: VAN 응답 수신 직후, 내부 트랜잭션 서비스를 통해 결제 상태, 복식부기 원장(Ledger), `outbox_events` 테이블에 단일 트랜잭션으로 저장하고 즉시 DB COMMIT 완료.
+   - **Step 6 (Redis 락 반납)**: DB 커밋이 완전히 끝난 뒤 `finally` 블록에서 안전하게 Valkey 락 해제.
 4. 비동기 이벤트 전파 및 실시간 알림:
    - Outbox Relay가 이벤트를 읽어 Kafka로 발행 -> `realtime-broker-service`가 멱등 소비하여 매장 POS 단말기에 SSE로 실시간 결제 완료 푸시.
 
@@ -52,8 +54,10 @@
 ## 4. 모듈별 상세 역할 및 설계 규칙
 
 ### A. 사내 공통 플랫폼 라이브러리 (`libs/` -> `bootJar = false`, `jar = true`)
-- **`platform-web-starter`**: `@CurrentTerminal` ArgumentResolver, 전역 예외 처리(`@RestControllerAdvice`), 로깅 시 `Authorization` 헤더 `[MASKED]` 처리 필터.
-- **`platform-lock-starter`**: `@DistributedLock`, SpEL 동적 키 파서, `AopForTransaction`(`REQUIRES_NEW` 분리로 프록시 순서 역전 및 Self-Invocation 원천 방지).
+- **`platform-core`**: 웹 프레임워크(MVC/WebFlux)에 종속되지 않는 순수 공통 모듈. `TerminalContext`, 전사 표준 예외(`BusinessException`), 에러 코드 규격(`ErrorCode`, `CommonErrorCode`), 에러 메시지 상수(`ErrorMessage`), 공통 에러 응답(`ErrorResponse`).
+- **`platform-mvc-starter`**: Spring MVC(Servlet) 기반 마이크로서비스 전용 스타터. `@CurrentTerminal` ArgumentResolver, MVC 전역 예외 처리(`@RestControllerAdvice`), 로깅 시 `Authorization` 헤더 `[MASKED]` 처리 서블릿 필터.
+- **`platform-webflux-starter`**: Spring WebFlux(Reactive/Netty) 기반 마이크로서비스(`api-gateway` 등) 전용 스타터. Reactive 전역 예외 처리기 및 Reactive 민감 헤더(`[MASKED]`) 마스킹 `WebFilter`.
+- **`platform-lock-starter`**: `@DistributedLock`, SpEL 동적 키 파서, Redisson Pub/Sub 기반 순수 분산 락 AOP (외부 API 호출 시 DB 커넥션 풀 고갈을 막기 위해 DB 트랜잭션과 강제 결합하지 않음).
 - **`platform-http-client-starter`**: `@HttpExchange` 팩토리, Resilience4j 서킷브레이커/벌크헤드/타임아웃 강제 적용, 외부 호출 시 `X-Request-Id` 및 `traceparent` 자동 전파. (단, 망취소 등 비즈니스 Fallback 정책은 공통 모듈에 넣지 않고 호출측에 위임).
 - **`platform-observability-starter`**: OpenTelemetry SDK 연동, `@DistributedLock` 대기 시간 커스텀 Span 기록, MDC(`traceId`, `spanId`, `terminalId`) 자동 주입.
 

@@ -7,13 +7,15 @@
 
 ---
 
-## 🏗️ 멀티모듈 아키텍처 구조 (10 Modules)
+## 🏗️ 멀티모듈 아키텍처 구조 (12 Modules)
 
 ```text
 aegis-pay-platform/
-├── libs/                                  # 사내 공통 플랫폼 Custom Starters (jar = true, bootJar = false)
-│   ├── platform-web-starter               # @CurrentTerminal ArgumentResolver, 전역 예외 처리, 민감 헤더 마스킹
-│   ├── platform-lock-starter              # @DistributedLock (Valkey/Redisson), SpEL 파서, AopForTransaction (REQUIRES_NEW)
+├── libs/                                  # 사내 공통 플랫폼 Custom Starters & Core (jar = true, bootJar = false)
+│   ├── platform-core                      # 순수 공통 모듈 (TerminalContext, ErrorCode, ErrorMessage, ErrorResponse, BusinessException)
+│   ├── platform-mvc-starter               # Spring MVC 전용 스타터 (@CurrentTerminal ArgumentResolver, MVC 전역 예외 처리, 민감 헤더 마스킹)
+│   ├── platform-webflux-starter           # Spring WebFlux 전용 스타터 (Reactive 전역 예외 처리, Reactive 민감 헤더 마스킹 WebFilter)
+│   ├── platform-lock-starter              # @DistributedLock (Valkey/Redisson), SpEL 동적 키 파서, 순수 분산 락 AOP
 │   ├── platform-http-client-starter       # @HttpExchange 팩토리, Resilience4j (CircuitBreaker/Bulkhead), 컨텍스트 전파
 │   └── platform-observability-starter     # OpenTelemetry OTLP 연동, 분산 락 대기 시간 Custom Span, MDC 자동 주입
 ├── services/                              # 코어 마이크로서비스 (bootJar = true, jar = false)
