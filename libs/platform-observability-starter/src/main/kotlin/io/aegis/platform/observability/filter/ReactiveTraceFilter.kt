@@ -16,8 +16,8 @@ class ReactiveTraceFilter(
 
     override fun filter(
         exchange: ServerWebExchange,
-        chain: WebFilterChain
-    ): Mono<Void?> {
+        chain: WebFilterChain,
+    ): Mono<Void> {
         val requestId = exchange.request.headers.getFirst(TraceContextConstants.HEADER_REQUEST_ID)
             ?.takeIf { it.isNotBlank() }
             ?: UUID.randomUUID().toString()
