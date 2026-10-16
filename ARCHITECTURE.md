@@ -17,9 +17,9 @@
    - RDBMS와 Kafka 간의 이중 쓰기(Dual Write) 문제를 해결하는 Transactional Outbox 패턴 구현
    - At-least-once 전달 보장과 멱등 컨슈머(Idempotent Consumer) 구현, SSE(Server-Sent Events)를 통한 매장 단말기 실시간 알림 푸시
 4. **프로덕션 복원력 & 관측 가능성 (Resilience & Full Observability)**
-   - 선언적 HTTP 클라이언트(`@HttpExchange`)와 Resilience4j(Circuit Breaker, Bulkhead, Strict Timeout, Exponential Backoff with Jitter)의 공통 Starter 모듈화
+   - 하부 HTTP 라이브러리(`RestClient`, `WebClient`)를 캡슐화한 표준 HTTP 클라이언트 인터페이스(`SyncHttpClient`, `AsyncHttpClient`)와 Resilience4j(Circuit Breaker, Retry, Strict Timeout), 공통 `ErrorResponse` 역직렬화 및 `BusinessException` 자동 변환 Starter 모듈화
    - 외부 VAN사 승인 타임아웃 발생 시 자동 망취소(보상 트랜잭션) 처리
-   - OpenTelemetry(OTLP) 기반 전 구간(`Gateway -> Service -> Outbox/Kafka -> Broker`) W3C `traceparent` 및 `X-Request-Id` 컨텍스트 전파, 커스텀 Span(분산 락 대기 시간 측정) 시각화
+   - OpenTelemetry(OTLP) 기반 전 구간(`Gateway -> Service -> Outbox/Kafka -> Broker`) W3C `traceparent` 및 `X-Terminal-Id`, `X-Merchant-Id` Baggage 컨텍스트 전파, 커스텀 Span 시각화
 
 ---
 
@@ -58,8 +58,8 @@
 - **`platform-mvc-starter`**: Spring MVC(Servlet) 기반 마이크로서비스 전용 스타터. `@CurrentTerminal` ArgumentResolver, MVC 전역 예외 처리(`@RestControllerAdvice`), 로깅 시 `Authorization` 헤더 `[MASKED]` 처리 서블릿 필터.
 - **`platform-webflux-starter`**: Spring WebFlux(Reactive/Netty) 기반 마이크로서비스(`api-gateway` 등) 전용 스타터. Reactive 전역 예외 처리기 및 Reactive 민감 헤더(`[MASKED]`) 마스킹 `WebFilter`.
 - **`platform-lock-starter`**: `@DistributedLock`, SpEL 동적 키 파서, Redisson Pub/Sub 기반 순수 분산 락 AOP (외부 API 호출 시 DB 커넥션 풀 고갈을 막기 위해 DB 트랜잭션과 강제 결합하지 않음).
-- **`platform-http-client-starter`**: `@HttpExchange` 팩토리, Resilience4j 서킷브레이커/벌크헤드/타임아웃 강제 적용, 외부 호출 시 `X-Request-Id` 및 `traceparent` 자동 전파. (단, 망취소 등 비즈니스 Fallback 정책은 공통 모듈에 넣지 않고 호출측에 위임).
-- **`platform-observability-starter`**: OpenTelemetry SDK 연동, `@DistributedLock` 대기 시간 커스텀 Span 기록, MDC(`traceId`, `spanId`, `terminalId`) 자동 주입.
+- **`platform-http-client-starter`**: 하부 HTTP 클라이언트를 은닉한 표준 인터페이스(`SyncHttpClient` / `AsyncHttpClient`) 및 팩토리, 내부 엔진으로 Spring Boot 3.5 `RestClient`(MVC)와 `WebClient`+Coroutines(WebFlux) 캡슐화, Resilience4j 서킷브레이커/재시도/타임아웃 적용, 원격 `ErrorResponse` 파싱 및 `BusinessException` 변환, 외부 호출 시 `traceparent` 및 `X-Terminal-Id`/`X-Merchant-Id` 자동 전파. (단, 망취소 등 비즈니스 Fallback 정책은 공통 모듈에 넣지 않고 호출측에 위임).
+- **`platform-observability-starter`**: OpenTelemetry SDK 및 Micrometer Tracing 연동, W3C `traceparent` + Baggage(`X-Terminal-Id`, `X-Merchant-Id`) 전파, MVC/Reactive MDC(`traceId`, `spanId`, `terminalId`, `merchantId`) 자동 주입 필터.
 
 ### B. 코어 마이크로서비스 (`services/` -> `bootJar = true`, `jar = false`)
 - **`api-gateway`**: Spring Cloud Gateway (WebFlux/Netty), Caffeine 로컬 캐시 JWKS 검증기, Header Sanitizer & Injector.
