@@ -118,4 +118,18 @@ class CurrentTerminalArgumentResolverTest {
 
         assertNull(result)
     }
+
+    @Test
+    @DisplayName("required=false여도 필수 헤더 중 하나만 전달되면 불완전 요청으로 간주하여 예외를 던진다.")
+    fun throwsWhenNotRequiredButOnlyHeaderPresent() {
+        val webRequest = webRequestWith(
+            TerminalContext.HEADER_TERMINAL_ID to "T-001",
+        )
+
+        val ex = assertThrows<MissingRequestHeaderException>{
+            resolve(optionalParam, webRequest)
+        }
+
+        assertEquals(TerminalContext.HEADER_STORE_ID, ex.headerName)
+    }
 }

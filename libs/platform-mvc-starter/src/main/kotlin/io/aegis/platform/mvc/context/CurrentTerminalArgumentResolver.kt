@@ -30,9 +30,11 @@ class CurrentTerminalArgumentResolver : HandlerMethodArgumentResolver {
         val terminalId = request.getHeader(TerminalContext.HEADER_TERMINAL_ID)?.takeIf { it.isNotBlank() }
         val storeId = request.getHeader(TerminalContext.HEADER_STORE_ID)?.takeIf { it.isNotBlank() }
 
-        if (terminalId == null || storeId == null) {
-            if (!annotation.required) return null
+        if(terminalId == null && storeId == null && !annotation.required) {
+            return null
+        }
 
+        if (terminalId == null || storeId == null) {
             val missingHeader = if (terminalId == null) {
                 TerminalContext.HEADER_TERMINAL_ID
             } else {
