@@ -1,0 +1,40 @@
+server:
+  port: 8080
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: auth-service
+              uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/**, /.well-known/**
+            - id: payment-ledger-service
+              uri: ${PAYMENT_LEDGER_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/payments/**
+            - id: realtime-broker-service
+              uri: ${REALTIME_BROKER_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/stream/**
+
+aegis:
+  gateway:
+    auth:
+      auth-service-base-url: ${AUTH_SERVICE_URL:http://localhost:8081}
+      jwks-cache-ttl: 6h
+      jwks-refresh-interval: 30m
+      jwks-min-refresh-cooldown: 30s
+      blacklist-timeout: 200ms
+      permit-all-paths:
+        - /api/v1/auth/token
+        - /.well-known/jwks.json
