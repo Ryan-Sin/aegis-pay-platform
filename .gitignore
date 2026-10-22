@@ -35,3 +35,6 @@ ehthumbs_vista.db
 *.log
 tmp/
 temp/
+
+# Local-only agent context (not committed)
+docs/private/
