@@ -88,7 +88,7 @@ class GlobalExceptionHandler {
     ): ResponseEntity<ErrorResponse> {
         val errorCode = ex.errorCode
         val message = ex.message ?: errorCode.message
-        log.warn("[{}] uri={}, message={}", errorCode.code, request.requestURI, message)
+        log.warn("[{}] uri={}, message={}, detail={}", errorCode.code, request.requestURI, message, ex.detail)
         return ResponseEntity
             .status(errorCode.status)
             .body(

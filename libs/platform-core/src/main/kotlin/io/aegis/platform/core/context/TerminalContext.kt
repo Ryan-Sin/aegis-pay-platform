@@ -9,5 +9,8 @@ data class TerminalContext(
         const val HEADER_TERMINAL_ID = "X-Terminal-Id"
         const val HEADER_STORE_ID = "X-Store-Id"
         const val HEADER_TERMINAL_SCOPES = "X-Terminal-Scopes"
+
+        const val CLAIM_STORE_ID = "storeId"
+        const val CLAIM_SCOPES = "scopes"
     }
 }

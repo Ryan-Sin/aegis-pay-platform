@@ -44,7 +44,7 @@ class ReactiveGlobalExceptionHandler {
         val errorCode = ex.errorCode
         val path = request.uri.path
         val message = ex.message ?: errorCode.message
-        log.warn("[{}] uri={}, message={}", errorCode.code, path, message)
+        log.warn("[{}] uri={}, message={}, detail={}", errorCode.code, path, message, ex.detail)
         return ResponseEntity
             .status(errorCode.status)
             .body(

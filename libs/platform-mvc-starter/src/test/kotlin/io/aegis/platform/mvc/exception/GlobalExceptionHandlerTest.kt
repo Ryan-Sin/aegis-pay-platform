@@ -91,6 +91,19 @@ class GlobalExceptionHandlerTest {
         }
 
         @Test
+        @DisplayName("BusinessException의 내부 로깅용 detail은 응답 body에 노출되지 않는다")
+        fun doesNotLeakBusinessExceptionDetail() {
+            val internalDetail = "lock-key=payment:ORDER-1001 acquired by node-2"
+            val ex = BusinessException(CommonErrorCode.BAD_REQUEST, detail = internalDetail)
+
+            val response = handler.handleBusinessException(ex, request)
+            val body = assertNotNull(response.body)
+
+            assertFalse(body.message.contains(internalDetail))
+            assertTrue(body.errors.none { it.reason.contains(internalDetail) })
+        }
+
+        @Test
         @DisplayName("예상치 못한 서버 예외 발생 시 500을 반환하며 내부 예외 상세 메시지는 외부로 노출하지 않는다")
         fun handlesUnexpectedExceptionWithoutLeakingInternalDetails() {
             val internalSecretMessage = "HikariPool-1 - Connection refused to 10.0.1.55:5432"
