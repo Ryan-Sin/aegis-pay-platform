@@ -22,4 +22,18 @@ class BusinessExceptionTest {
         assertTrue(exception.message.contains(TerminalContext.HEADER_TERMINAL_ID))
     }
 
+    @Test
+    @DisplayName("내부 로깅용 detail은 외부 노출용 message에 섞이지 않는다")
+    fun shouldSeparateDetailFromMessage() {
+        val internalDetail = "JWT 서명 불일치 (kid=key-2026-10)"
+
+        val exception = BusinessException(
+            CommonErrorCode.BAD_REQUEST,
+            detail = internalDetail,
+        )
+
+        assertEquals(internalDetail, exception.detail)
+        assertFalse(exception.message.contains(internalDetail))
+    }
+
 }
