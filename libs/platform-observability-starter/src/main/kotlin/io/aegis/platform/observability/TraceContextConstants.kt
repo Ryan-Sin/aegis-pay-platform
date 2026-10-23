@@ -1,5 +1,8 @@
 package io.aegis.platform.observability
 
+/**
+ * 분산 추적(Tracing) 및 로깅 컨텍스트(MDC/Baggage) 표준 상수
+ */
 object TraceContextConstants {
     const val HEADER_REQUEST_ID = "X-Request-Id"
     const val HEADER_TRACE_ID = "X-Trace-Id"

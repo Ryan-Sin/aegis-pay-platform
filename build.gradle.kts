@@ -50,6 +50,10 @@ subprojects {
         useJUnitPlatform()
     }
 
+    configurations.named("testImplementation") {
+        extendsFrom(configurations.named("compileOnly").get())
+    }
+
     dependencies {
         "testImplementation"("org.junit.jupiter:junit-jupiter")
         "testImplementation"("org.jetbrains.kotlin:kotlin-test-junit5")
