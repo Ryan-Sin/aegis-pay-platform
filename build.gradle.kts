@@ -19,7 +19,8 @@ allprojects {
     }
 }
 
-subprojects {
+// :libs, :services, :simulators는 디렉터리를 묶는 집계 프로젝트라 플러그인을 적용하지 않는다.
+configure(subprojects.filter { it.childProjects.isEmpty() }) {
     apply(plugin = "org.jetbrains.kotlin.jvm")
     apply(plugin = "org.jetbrains.kotlin.plugin.spring")
     apply(plugin = "org.springframework.boot")
@@ -57,9 +58,11 @@ subprojects {
     }
 
     val isLibraryModule = project.path.startsWith(":libs:")
+    // 아직 코드가 없는 서비스·시뮬레이터는 main class가 없어 bootJar가 실패한다. 코드가 생기면 자동으로 켜진다.
+    val hasMainSources = !fileTree("src/main/kotlin") { include("**/*.kt") }.isEmpty
 
     tasks.named<BootJar>("bootJar") {
-        enabled = !isLibraryModule
+        enabled = !isLibraryModule && hasMainSources
     }
 
     tasks.named<Jar>("jar") {

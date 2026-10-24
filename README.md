@@ -63,7 +63,7 @@ docker compose down
 ### 빌드와 테스트
 
 ```bash
-./gradlew test      # build는 코드 없는 모듈의 bootJar에서 실패한다(STATUS K-9)
+./gradlew build
 ./gradlew :libs:platform-core:test
 ./gradlew :services:api-gateway:test
 ```
