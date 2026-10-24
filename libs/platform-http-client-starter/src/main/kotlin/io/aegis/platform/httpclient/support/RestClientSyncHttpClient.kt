@@ -86,7 +86,7 @@ internal class RestClientSyncHttpClient(
         val requestSpec = restClient.method(method)
             .uri(uri)
             .headers { httpHeaders ->
-                HttpHeaderPropagator.applyHeaders(httpHeaders, headers)
+                HttpHeaderPropagator.applyHeaders(httpHeaders, headers, spec.target)
             }
 
         if (body != null) {

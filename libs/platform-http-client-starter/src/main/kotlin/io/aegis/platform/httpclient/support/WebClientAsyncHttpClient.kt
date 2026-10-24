@@ -90,7 +90,7 @@ internal class WebClientAsyncHttpClient(
         val requestSpec = webClient.method(method)
             .uri(uri)
             .headers { httpHeaders ->
-                HttpHeaderPropagator.applyHeaders(httpHeaders, headers)
+                HttpHeaderPropagator.applyHeaders(httpHeaders, headers, spec.target)
             }
 
         val responseSpec = if (body != null) {

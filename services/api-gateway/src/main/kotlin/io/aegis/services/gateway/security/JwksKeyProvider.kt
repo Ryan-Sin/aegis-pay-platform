@@ -7,6 +7,7 @@ import com.nimbusds.jose.jwk.RSAKey
 import io.aegis.platform.core.exception.BusinessException
 import io.aegis.platform.httpclient.AsyncHttpClientFactory
 import io.aegis.platform.httpclient.config.HttpClientSpec
+import io.aegis.platform.httpclient.config.HttpTarget
 import io.aegis.platform.httpclient.get
 import io.aegis.services.gateway.config.GatewayAuthProperties
 import io.aegis.services.gateway.exception.GatewayErrorCode
@@ -40,6 +41,7 @@ class JwksKeyProvider(
         HttpClientSpec(
             targetName = AUTH_SERVICE_TARGET_NAME,
             baseUrl = properties.authServiceBaseUrl,
+            target = HttpTarget.INTERNAL,
         ),
     )
 
