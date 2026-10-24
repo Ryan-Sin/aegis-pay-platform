@@ -7,6 +7,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class FakeJwksAsyncHttpClient : AsyncHttpClient {
 
+    // 테스트 스레드에서 설정하고 Caffeine 로더(Dispatchers.Default) 스레드에서 읽는다.
+    @Volatile
     private var handler: () -> String = { error("FakeJwksAsyncHttpClient: willReturn() 또는 willThrow()로 응답을 먼저 준비하세요") }
 
     private val callCount = AtomicInteger(0)
