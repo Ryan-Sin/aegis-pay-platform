@@ -17,7 +17,7 @@
 | 관측 데이터 제공, 장애 대응·재발 방지 | 메트릭 규약, 트레이싱, Grafana, Chaos 실험과 회고 | 🚧 (트레이싱 연결 ✅, 메트릭 규약·대시보드 📋) |
 | 동시성, 상태, 타임아웃, 재시도, 중복 처리, 부분 실패 | payment Flow 2, 락-트랜잭션 분리, Outbox, 망취소 | 설계 ✅ / 구현 📋 |
 | 여러 계층의 데이터로 장애·병목 분석 | JVM·Netty·커넥션 메트릭, 부하 시뮬레이터 | 📋 |
-| 운영 환경: MySQL, Redis, Kafka, K8s, Istio, ArgoCD, Vault, Prometheus/Grafana, Chaos Mesh | MySQL 전환, Tier 2 로컬 k3d + Istio, Vault(서명키) | 📋 |
+| 운영 환경: MySQL, Redis, Kafka, K8s, Istio, ArgoCD, Vault, Prometheus/Grafana, Chaos Mesh | MySQL 전환(M3), Tier 2 로컬 k3d + Istio, KMS(서명키, 로컬은 LocalStack) | 📋 |
 
 ## 2. 마일스톤 (우선순위 순)
 
@@ -27,7 +27,7 @@
 |---|---|---|---|
 | M1 | **api-gateway 마무리** | `baggage` sanitize, 테스트 3종(JwksKeyProvider·JwtTokenVerifier·E2E), 커밋 | 인증·인가, API Gateway |
 | M2 | **관측성 기반 복구** | Boot 4 `spring-boot-starter-opentelemetry` 연결(K-1), `ReactiveTraceFilter` 재작성(K-2), 코루틴(`mono {}`) 경계 전파 테스트 | 관측 데이터 제공 |
-| M3 | **auth-service** | JWT 발급, JWKS, 서명키 로테이션(이전·신규 키 동시 게시), `iss`/`aud` 확정 | JWT 발급·JWKS 서비스 |
+| M3 | **auth-service** | MySQL + LocalStack KMS, JWT 발급(KMS 서명 위임, ADR-0006), JWKS, 서명키 로테이션(새 키 + alias 전환, 이전·신규 키 동시 게시), `iss`/`aud` 확정, gateway baggage 설정(ADR-0007), JWKS warm-up(K-12) | JWT 발급·JWKS 서비스 |
 | M4 | **라이브러리 변경 관리** | `maven-publish` + SemVer + `platform-bom`, Kotlin binary-compatibility-validator를 CI에 적용, K-7(`detail`)을 사례로 deprecation 경로 문서화 | 호환성·버전 관리·마이그레이션 |
 | M5 | **연결 관리 플랫폼 (SSE)** | 인스턴스 간 라우팅(Redis Pub/Sub 또는 Kafka), 배포 시 drain, jitter backoff 재연결, `Last-Event-ID` 재전송, 대량 연결 부하 테스트 | SSE/MQTT, 높은 동시 연결 |
 | M6 | **Messaging 라이브러리 + payment Flow 2** | Outbox(+ trace 컨텍스트 저장), 멱등 컨슈머, 락-트랜잭션 분리, 망취소, MySQL 전환, 100 스레드 동시 요청에서 정확히 1건 승인 증명 | Messaging, 중복 처리, 부분 실패 |
