@@ -28,7 +28,7 @@ aegis-pay-platform/
 │   └── platform-observability-starter     # ✅ OpenTelemetry 연동(Boot 4 starter), Request ID 헤더·MDC 전파
 ├── services/                              # 서비스 (bootJar = true, jar = false)
 │   ├── api-gateway                        # 🚧 Spring Cloud Gateway, Header Sanitizer, JWKS 캐시 JWT 검증, Blacklist, 외부 baggage 차단
-│   ├── auth-service                       # 📋 RS256 JWT 발급, JWKS, 서명키 로테이션
+│   ├── auth-service                       # 📋 RS256 JWT 발급(KMS 서명 위임), JWKS, 서명키 로테이션
 │   ├── payment-ledger-service             # 📋 멱등성, 락-트랜잭션 분리, 망취소, Transactional Outbox
 │   └── realtime-broker-service            # 📋 Kafka 멱등 컨슈머, SSE 연결 관리
 └── simulators/
@@ -95,5 +95,6 @@ docker compose down
 | **Framework** | Spring Boot `4.1.1`, Spring Cloud `2025.1.3` | Gateway(WebFlux) + 서비스(MVC). Boot 4는 auto-configuration이 기술별 모듈로 분리됨 |
 | **Database & Lock** | PostgreSQL `17` → MySQL 전환 예정, Valkey `8.0` (Redisson `4.8.0`) | 원장 ACID, 분산 락 |
 | **Messaging** | Apache Kafka `3.9.0` (KRaft) | Transactional Outbox |
+| **Key Management** | AWS KMS (로컬: LocalStack, `LOCALSTACK_AUTH_TOKEN` 필요) | JWT 서명키, ADR-0006 (구현 전) |
 | **Resilience & Observability** | Resilience4j, Micrometer, OpenTelemetry, Prometheus, Grafana | 트레이싱 연결 완료. 메트릭 수집 방식은 M7에서 결정 ([STATUS K-10](./docs/STATUS.md)) |
 | **Testing** | JUnit `6`, Kotlin Test | 경계값·장애 복구 중심 행위 검증 |
