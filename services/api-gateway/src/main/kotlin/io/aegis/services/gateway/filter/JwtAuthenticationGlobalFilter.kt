@@ -11,6 +11,7 @@ import kotlinx.coroutines.reactor.mono
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
 import org.springframework.cloud.gateway.filter.GlobalFilter
 import org.springframework.core.Ordered
+import org.springframework.core.PropagationContextElement
 import org.springframework.http.HttpHeaders
 import org.springframework.http.server.PathContainer
 import org.springframework.stereotype.Component
@@ -41,7 +42,8 @@ class JwtAuthenticationGlobalFilter(
         }
 
         // 인증 실패 로그는 ReactiveGlobalExceptionHandler가 code/uri/detail로 단일 기록한다.
-        return mono {
+        // mono {}는 Dispatchers.Default에서 실행되므로 PropagationContextElement로 MDC·observation을 복원한다.
+        return mono(PropagationContextElement()) {
             val token = extractBearerToken(exchange)
                 ?: throw BusinessException(
                     GatewayErrorCode.MISSING_AUTH_TOKEN,
