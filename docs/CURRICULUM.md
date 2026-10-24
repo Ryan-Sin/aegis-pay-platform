@@ -7,14 +7,14 @@
 
 | 목표 역량 | 프로젝트 대응 | 현재 |
 |---|---|---|
-| 인증·인가, JWT 발급·JWKS 서비스, API Gateway | api-gateway, auth-service | Gateway 🚧 / auth 📋 |
+| 인증·인가, JWT 발급·JWKS 서비스, API Gateway | api-gateway, auth-service | Gateway ✅(M1) / auth 📋 |
 | Feature Flag, A/B Test, 메시징 플랫폼 | Feature Flag 서비스 + SDK, Messaging 라이브러리 | 📋 |
 | SSE Server, MQTT Broker (지속 연결, 높은 동시 연결 수) | realtime-broker-service를 연결 관리 플랫폼으로 | 📋 |
 | Metric, Logging, Distributed Lock, Messaging 공통 라이브러리 | `libs/` 스타터 | Lock·Logging(예외) ✅ / Metric·Messaging 📋 |
 | 사용하기 쉬운 인터페이스와 확장 지점 | AutoConfiguration + `@ConditionalOnMissingBean` | ✅ |
 | 테스트, 호환성·버전 관리, 점진 적용, 마이그레이션, 문서·예제 | 라이브러리 배포·BOM·호환성 검증·마이그레이션 도구 | 📋 (가장 큰 공백) |
 | IDP / 개발 도구 | Gradle convention plugin, 서비스 템플릿, OpenRewrite 레시피 | 📋 |
-| 관측 데이터 제공, 장애 대응·재발 방지 | 메트릭 규약, 트레이싱, Grafana, Chaos 실험과 회고 | 🚧 (트레이싱 미연결) |
+| 관측 데이터 제공, 장애 대응·재발 방지 | 메트릭 규약, 트레이싱, Grafana, Chaos 실험과 회고 | 🚧 (트레이싱 연결 ✅, 메트릭 규약·대시보드 📋) |
 | 동시성, 상태, 타임아웃, 재시도, 중복 처리, 부분 실패 | payment Flow 2, 락-트랜잭션 분리, Outbox, 망취소 | 설계 ✅ / 구현 📋 |
 | 여러 계층의 데이터로 장애·병목 분석 | JVM·Netty·커넥션 메트릭, 부하 시뮬레이터 | 📋 |
 | 운영 환경: MySQL, Redis, Kafka, K8s, Istio, ArgoCD, Vault, Prometheus/Grafana, Chaos Mesh | MySQL 전환, Tier 2 로컬 k3d + Istio, Vault(서명키) | 📋 |

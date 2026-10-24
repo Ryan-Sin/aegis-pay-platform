@@ -33,4 +33,6 @@
 ## 결과
 - 트레이싱 유무와 상관없이 Request ID가 전파된다. 메시 access log와 같은 ID로 연결된다.
 - Kafka 같은 비HTTP 홉은 메시지 헤더에 직접 실어야 한다.
-- 코루틴(`mono {}`) 경계로 MDC·observation이 전파되는지는 아직 확인하지 않았다(커리큘럼 M2).
+- 코루틴(`mono {}`)은 기본 디스패처(`Dispatchers.Default`)에서 실행되어 MDC가 전파되지 않는다. Spring 7의 `PropagationContextElement`를 붙이면(`mono(PropagationContextElement()) { }`) 디스패처를 바꿔도 유지된다(`ReactiveTraceFilterTest`로 확인, 2026-10-24).
+- MDC accessor는 `Slf4jThreadLocalAccessor("requestId")`처럼 키를 지정한 selective 모드로 등록한다. 인자 없이 만들면 MDC 전체를 덮어써서 Micrometer Tracing이 넣는 traceId/spanId와 충돌한다.
+- 트레이싱 연결 후 외부 baggage가 추출 단계에서 들어오는 문제는 ADR-0005에서 다룬다.
