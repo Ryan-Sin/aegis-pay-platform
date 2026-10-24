@@ -5,8 +5,8 @@ plugins {
 dependencies {
     api(project(":libs:platform-core"))
     api("org.springframework.boot:spring-boot-starter-actuator")
-    api("io.micrometer:micrometer-tracing-bridge-otel")
-    api("io.opentelemetry:opentelemetry-exporter-otlp")
+    // Boot 4: Tracer/OTel SDK/OTLP exporter auto-configuration을 함께 가져온다(K-1).
+    api("org.springframework.boot:spring-boot-starter-opentelemetry")
     api("io.micrometer:context-propagation")
     implementation("org.springframework.boot:spring-boot-starter-aspectj")
 
@@ -14,5 +14,7 @@ dependencies {
     compileOnly("org.springframework.boot:spring-boot-starter-webflux")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-web")
     testImplementation("org.springframework.boot:spring-boot-starter-webflux")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
 }
