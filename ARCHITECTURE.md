@@ -102,6 +102,7 @@
 | `Idempotency-Key` | 업무 헤더 | 단말 | 그대로 사용(서비스가 검증) | ✕ |
 
 - 하위 서비스는 `X-Terminal-*`, `X-Store-*`를 **게이트웨이에서 온 요청일 때만** 신뢰한다. 메시 환경에서는 Istio `AuthorizationPolicy`로 호출 주체를 게이트웨이 ServiceAccount로 제한한다.
+- 외부 `baggage`는 헤더 전달 단계(HeaderSanitizer)와 trace context 추출 단계(propagator) 양쪽에서 버린다. 서버 observation이 모든 필터보다 먼저 추출하기 때문이다(ADR-0005).
 - 용어는 **Store**로 통일한다. `Merchant`는 쓰지 않는다.
 
 ## 6. 실행 환경 (로컬 우선, 단계별)
