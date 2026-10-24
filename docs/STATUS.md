@@ -13,7 +13,7 @@
 | `libs:platform-mvc-starter` | ✅ | `CurrentTerminalArgumentResolverTest`, `GlobalExceptionHandlerTest`, `SensitiveHeaderMaskingFilterTest` | |
 | `libs:platform-webflux-starter` | ✅ | 없음 | 전역 예외 처리기 테스트 필요(detail 비노출) |
 | `libs:platform-lock-starter` | ✅ | 없음 | Redisson 기반. 락 해제 보장·lease 테스트 필요 |
-| `libs:platform-http-client-starter` | ✅ ⚠️ | 없음 | 아래 K-3 참고 |
+| `libs:platform-http-client-starter` | ✅ | `HttpHeaderPropagatorTest`, `RestClientTargetPropagationTest`, `WebClientTargetPropagationTest` | `HttpClientSpec.target`(기본 `EXTERNAL`)으로 내부 식별자·baggage 전파 범위를 나눈다(K-3). Boot 4 client builder 모듈 포함(K-11) |
 | `libs:platform-observability-starter` | ✅ | `RequestIdsTest`, `ReactiveTraceFilterTest`, `ServletTraceMdcFilterTest` | `spring-boot-starter-opentelemetry` 기반(K-1 해결). Request ID는 헤더 + MDC(ADR-0002). 코루틴은 `mono(PropagationContextElement())` 필요(테스트로 확인) |
 | `services:api-gateway` | 🚧 | `JwksKeyProviderTest`, `JwtTokenVerifierTest`, `InboundBaggageRejectingPropagatorTest`, `GatewayE2ETest` | M1·M2 완료. JWT 기반 단말 baggage 설정은 📋 |
 | `services:auth-service` | 📋 | — | 코드 없음 |
@@ -49,11 +49,12 @@
 |---|---|---|---|
 | K-1 | ~~트레이싱이 연결되어 있지 않다~~ | `GatewayE2ETest.wiresOpenTelemetryTracer` | 해결: `spring-boot-starter-opentelemetry`로 교체. span export는 `management.opentelemetry.tracing.export.otlp.endpoint`를 지정해야 켜진다(미지정 시 SpanExporter 빈 없음) |
 | K-2 | ~~`ReactiveTraceFilter`의 커스텀 accessor scope 충돌, `ServletTraceMdcFilter`의 MDC 미설정~~ | `ReactiveTraceFilterTest`, `ServletTraceMdcFilterTest` | 해결: ADR-0002 방식으로 재작성. 두 필터 생성자에서 `baggageManager` 파라미터를 제거했다(public API 변경, monorepo 밖 사용처 없음) |
-| K-3 | `HttpHeaderPropagator`가 MDC의 `X-Terminal-Id`/`X-Store-Id`를 **모든 외부 호출(VAN 포함)**에 붙인다 | 코드 확인 | `HttpClientSpec`에 internal/external 구분 추가, external에는 내부 헤더 미전파 |
+| K-3 | ~~`HttpHeaderPropagator`가 MDC의 `X-Terminal-Id`/`X-Store-Id`를 모든 외부 호출(VAN 포함)에 붙인다~~ | `*TargetPropagationTest` | 해결: `HttpClientSpec.target`(`INTERNAL`/`EXTERNAL`, 기본 `EXTERNAL`). 외부 대상에는 `X-Request-Id`·`X-Terminal-Id`·`X-Store-Id`를 붙이지 않고, tracing이 주입한 `baggage`를 filter/interceptor에서 지운다. `traceparent`는 유지. `HttpClientSpec` 생성자 변경은 바이너리 비호환(K-7과 같은 유형) |
 | K-4 | ~~api-gateway가 클라이언트의 `traceparent`를 그대로 하위로 전달한다~~ | `GatewayE2ETest.continuesTraceWithOwnSpanAndPropagatesRequestId` | 해결: K-1 이후 게이트웨이가 같은 trace id로 자기 span을 만든다 |
 | K-5 | ~~루트 `build.gradle.kts`의 `testImplementation.extendsFrom(compileOnly)`~~ | — | 해결: 루트에서 제거하고 observability 모듈에만 `testImplementation(spring-boot-starter-webflux)` 명시 |
 | K-6 | ~~observability 테스트 파일이 잘못된 경로로 staged된 상태~~ | — | 해결: 올바른 경로(`.../observability/filter/`)로 커밋됨 |
 | K-7 | `BusinessException`에 `detail` 파라미터를 추가하면서 생성자 JVM 시그니처가 바뀌었다(바이너리 비호환). monorepo에서는 문제없지만 artifact로 배포하면 사용처가 깨진다 | ADR-0001 | 라이브러리 배포 단계에서 호환성 검증 도입(커리큘럼 M4) |
 | K-8 | ~~트레이싱 연결 후 외부 `baggage`가 하위 서비스로 다시 주입된다.~~ 서버 observation이 모든 필터보다 먼저 baggage를 추출하고, HeaderSanitizer가 헤더를 지운 뒤에도 propagator가 컨텍스트에서 다시 주입했다(`terminalId=SPOOFED-TERM` 전달 확인) | `GatewayE2ETest`, `InboundBaggageRejectingPropagatorTest` | 해결: 게이트웨이에서 propagator 추출 단계의 baggage를 버린다(ADR-0005) |
-| K-9 | `./gradlew build`가 코드 없는 모듈(auth-service, payment-ledger-service, realtime-broker-service, simulators)과 집계 프로젝트(`:libs`, `:services`, `:simulators`)의 `bootJar`에서 실패한다(main class 없음). 이번 변경 전 HEAD에서도 동일 | `./gradlew build --continue` | 루트 `subprojects`에서 Boot 플러그인을 실제 모듈에만 적용하거나, 코드가 생길 때까지 해당 모듈 `bootJar` 비활성화. 테스트는 `./gradlew test`로 실행 |
+| K-9 | ~~`./gradlew build`가 코드 없는 모듈과 집계 프로젝트(`:libs`, `:services`, `:simulators`)의 `bootJar`에서 실패한다~~ | `./gradlew build` | 해결: 플러그인은 하위 프로젝트가 없는 실제 모듈에만 적용하고, `bootJar`는 `src/main/kotlin`에 코드가 있는 서비스에서만 켠다 |
 | K-10 | `spring-boot-starter-opentelemetry`가 `micrometer-registry-otlp`를 포함해서 기본값으로 `localhost:4318`에 메트릭을 push한다 | 컨텍스트의 `OtlpMeterRegistry` 빈 확인 | api-gateway는 `management.otlp.metrics.export.enabled=${OTLP_METRICS_EXPORT_ENABLED:false}`. 다른 서비스도 같은 설정 필요. 메트릭 수집 방식(OTLP vs Prometheus)은 M7에서 결정 |
+| K-11 | ~~platform HTTP client가 tracing으로 계측되지 않는다.~~ Boot 4는 `RestClient.Builder`/`WebClient.Builder` auto-configuration을 `spring-boot-restclient`/`spring-boot-webclient`로 분리했는데 classpath에 없어서, 팩토리가 계측되지 않은 기본 builder로 fallback했다(`traceparent`·client span 없음). gateway의 JWKS 호출도 해당 | `*TargetPropagationTest`(수정 전 `traceparent: null`) | 해결: http-client starter가 두 모듈을 `api`로 포함. builder 빈이 없으면 WARN 로그를 남긴다. MVC 서비스에도 `spring-webflux` jar가 함께 들어가지만 web application type 판정(MVC 우선)과 reactive 팩토리 생성 조건에는 영향이 없다 |

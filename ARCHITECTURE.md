@@ -69,7 +69,7 @@
 - **`platform-webflux-starter`**: Spring WebFlux 서비스(`api-gateway` 등)용. Reactive 전역 예외 처리, 민감 헤더 마스킹 `WebFilter`.
 - **`platform-lock-starter`**: `@DistributedLock`, SpEL 동적 키 파서, Redisson 기반 분산 락 AOP. DB 트랜잭션과 결합하지 않는다.
 - **`platform-http-client-starter`**: `SyncHttpClient`(RestClient)/`AsyncHttpClient`(WebClient + Coroutines) 표준 인터페이스와 팩토리, Resilience4j, 원격 `ErrorResponse` 파싱과 `BusinessException` 변환.
-  - **헤더 전파 규칙**: `X-Request-Id`, `X-Terminal-Id`, `X-Store-Id`, baggage는 **내부 대상에만** 전파한다. VAN 같은 외부 대상(`HttpClientSpec`에서 external로 지정)에는 내부 식별자를 붙이지 않는다.
+  - **헤더 전파 규칙**: `X-Request-Id`, `X-Terminal-Id`, `X-Store-Id`, baggage는 **내부 대상에만** 전파한다. `HttpClientSpec.target`의 기본값은 `EXTERNAL`이며, 내부 서비스는 `INTERNAL`로 명시한다. 지정을 빠뜨려도 VAN 같은 외부 대상으로 내부 식별자가 새지 않게 하기 위해서다. `traceparent`는 외부 대상에도 유지한다(외부 구간 지연을 trace로 보기 위해).
   - 망취소 같은 비즈니스 fallback 정책은 공통 모듈에 넣지 않고 호출 측에 위임한다.
 - **`platform-observability-starter`**: Spring Boot 4 `spring-boot-starter-opentelemetry` 기반 트레이싱·OTLP 연동.
   - Request ID: 헤더 + MDC(`Slf4jThreadLocalAccessor`)로 전파한다(ADR-0002).
