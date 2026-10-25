@@ -28,15 +28,33 @@ class HttpHeaderPropagatorTest {
     }
 
     @Test
-    @DisplayName("내부 대상에는 MDC의 Request ID와 단말 컨텍스트를 헤더로 전파한다.")
-    fun propagatesMdcToInternalTarget() {
+    @DisplayName("내부 대상에는 MDC의 Request ID만 헤더로 전파한다. 단말 컨텍스트는 헤더로 복사하지 않는다(baggage가 담당, ADR-0007).")
+    fun propagatesOnlyRequestIdToInternalTarget() {
         val headers = HttpHeaders()
 
         HttpHeaderPropagator.applyHeaders(headers, emptyMap(), HttpTarget.INTERNAL)
 
         assertEquals("req-12345678", headers.getFirst(TraceContextConstants.HEADER_REQUEST_ID))
-        assertEquals("TERM-001", headers.getFirst(TerminalContext.HEADER_TERMINAL_ID))
-        assertEquals("STORE-001", headers.getFirst(TerminalContext.HEADER_STORE_ID))
+        assertNull(headers.getFirst(TerminalContext.HEADER_TERMINAL_ID))
+        assertNull(headers.getFirst(TerminalContext.HEADER_STORE_ID))
+    }
+
+    @Test
+    @DisplayName("외부 대상용 정리는 baggage 헤더와 baggage 필드 이름의 개별 헤더(terminalId, storeId)를 모두 지운다.")
+    fun stripsBaggageAndFieldHeaders() {
+        val headers = HttpHeaders().apply {
+            set("baggage", "terminalId=TERM-001")
+            set("Terminalid", "TERM-001")
+            set("storeid", "STORE-001")
+            set("traceparent", "00-abc-def-01")
+        }
+
+        HttpHeaderPropagator.stripBaggage(headers)
+
+        assertNull(headers.getFirst("baggage"))
+        assertNull(headers.getFirst(TerminalContext.BAGGAGE_TERMINAL_ID))
+        assertNull(headers.getFirst(TerminalContext.BAGGAGE_STORE_ID))
+        assertEquals("00-abc-def-01", headers.getFirst("traceparent"))
     }
 
     @Test

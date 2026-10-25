@@ -63,14 +63,14 @@ object HttpTargetPropagationFixture {
         val span = tracer.nextSpan().name("test-request").start()
         try {
             tracer.withSpan(span).use {
-                tracer.createBaggageInScope("terminalId", "TERM-001").use {
-                    MDC.put(TraceContextConstants.MDC_REQUEST_ID, "req-12345678")
-                    MDC.put(TraceContextConstants.MDC_TERMINAL_ID, "TERM-001")
-                    MDC.put(TraceContextConstants.MDC_STORE_ID, "STORE-001")
-                    try {
-                        call()
-                    } finally {
-                        MDC.clear()
+                tracer.createBaggageInScope(TerminalContext.BAGGAGE_TERMINAL_ID, "TERM-001").use {
+                    tracer.createBaggageInScope(TerminalContext.BAGGAGE_STORE_ID, "STORE-001").use {
+                        MDC.put(TraceContextConstants.MDC_REQUEST_ID, "req-12345678")
+                        try {
+                            call()
+                        } finally {
+                            MDC.clear()
+                        }
                     }
                 }
             }
@@ -83,9 +83,9 @@ object HttpTargetPropagationFixture {
     fun assertInternalContextPropagated(traceId: String) {
         val headers = assertNotNull(received.get(), "하위 대상이 요청을 받지 못했습니다")
         assertEquals("req-12345678", headers.getFirst(TraceContextConstants.HEADER_REQUEST_ID))
-        assertEquals("TERM-001", headers.getFirst(TerminalContext.HEADER_TERMINAL_ID))
-        assertEquals("STORE-001", headers.getFirst(TerminalContext.HEADER_STORE_ID))
-        assertTrue(headers.getFirst("baggage").orEmpty().contains("terminalId=TERM-001"), "baggage: ${headers["baggage"]}")
+        assertNull(headers.getFirst(TerminalContext.HEADER_TERMINAL_ID), "단말 컨텍스트는 X-Terminal-Id 헤더로 보내지 않는다")
+        val baggage = headers.getFirst("baggage").orEmpty()
+        assertTrue(baggage.contains("terminalId=TERM-001") && baggage.contains("storeId=STORE-001"), "baggage: $baggage")
         assertTrue(headers.getFirst("traceparent").orEmpty().contains(traceId), "traceparent: ${headers["traceparent"]}")
     }
 
@@ -95,6 +95,8 @@ object HttpTargetPropagationFixture {
         assertNull(headers.getFirst(TerminalContext.HEADER_TERMINAL_ID))
         assertNull(headers.getFirst(TerminalContext.HEADER_STORE_ID))
         assertNull(headers.getFirst("baggage"), "외부 대상에 baggage가 전달되었습니다")
+        assertNull(headers.getFirst(TerminalContext.BAGGAGE_TERMINAL_ID), "외부 대상에 terminalId 개별 헤더가 전달되었습니다")
+        assertNull(headers.getFirst(TerminalContext.BAGGAGE_STORE_ID), "외부 대상에 storeId 개별 헤더가 전달되었습니다")
         assertTrue(headers.getFirst("traceparent").orEmpty().contains(traceId), "traceparent: ${headers["traceparent"]}")
     }
 
