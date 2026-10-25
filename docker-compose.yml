@@ -61,6 +61,8 @@ services:
       - "4566:4566"
     environment:
       SERVICES: kms
+      # init 스크립트(awslocal)가 키를 만드는 리전. auth-service의 aegis.auth.kms.region과 같아야 한다.
+      AWS_DEFAULT_REGION: ap-northeast-2
     volumes:
       - ./infra/localstack/init/ready.d:/etc/localstack/init/ready.d:ro
     networks:
