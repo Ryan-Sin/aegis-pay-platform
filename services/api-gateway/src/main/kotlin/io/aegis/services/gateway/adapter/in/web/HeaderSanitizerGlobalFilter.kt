@@ -1,5 +1,6 @@
 package io.aegis.services.gateway.adapter.`in`.web
 
+import io.aegis.platform.core.context.TerminalContext
 import org.slf4j.LoggerFactory
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
 import org.springframework.cloud.gateway.filter.GlobalFilter
@@ -56,7 +57,9 @@ class HeaderSanitizerGlobalFilter : GlobalFilter, Ordered {
         )
 
         private val SPOOFED_EXACT_HEADERS = listOf(
-            "baggage"
+            "baggage",
+            TerminalContext.BAGGAGE_TERMINAL_ID,
+            TerminalContext.BAGGAGE_STORE_ID,
         )
     }
 }

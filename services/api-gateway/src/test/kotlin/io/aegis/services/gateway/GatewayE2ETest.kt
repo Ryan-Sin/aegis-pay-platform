@@ -33,11 +33,14 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.reactive.server.WebTestClient
+import org.springframework.web.reactive.function.client.WebClient
+import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.net.InetSocketAddress
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -72,8 +75,8 @@ class GatewayE2ETest {
     }
 
     @Test
-    @DisplayName("외부에서 위조한 X-Terminal-*, X-Store-*, baggage 헤더는 제거되고 JWT 클레임 값으로 교체된다.")
-    fun replacesSpoofedTrustHeadersWithJwtClaims() {
+    @DisplayName("외부에서 위조한 X-Terminal-*, X-Store-*, baggage, terminalId 헤더는 제거되고 단말 컨텍스트는 JWT 클레임으로 만든 baggage 하나로만 전달된다.")
+    fun replacesSpoofedTrustHeadersWithJwtBaggage() {
         client.get().uri("/api/v1/payments/123")
             .header(HttpHeaders.AUTHORIZATION, "Bearer ${validToken()}")
             .header(TerminalContext.HEADER_TERMINAL_ID, "SPOOFED-TERM")
@@ -81,15 +84,26 @@ class GatewayE2ETest {
             .header(TerminalContext.HEADER_TERMINAL_SCOPES, "admin")
             .header("x-store-role", "owner")
             .header("baggage", "terminalId=SPOOFED-TERM,storeId=SPOOFED-STORE")
+            .header(TerminalContext.BAGGAGE_TERMINAL_ID, "SPOOFED-TERM")
+            .header(TerminalContext.BAGGAGE_STORE_ID, "SPOOFED-STORE")
             .exchange()
             .expectStatus().isOk
 
         val received = assertNotNull(downstreamRequestHeaders.get(), "하위 서비스로 요청이 전달되어야 합니다")
-        assertEquals(listOf("TERM-001"), received[TerminalContext.HEADER_TERMINAL_ID])
-        assertEquals(listOf("STORE-001"), received[TerminalContext.HEADER_STORE_ID])
+        val baggage = assertNotNull(received.getFirst("Baggage"), "JWT 클레임으로 만든 baggage가 전달되어야 합니다")
+        val entries = baggage.split(",").associate { entry ->
+            entry.substringBefore(";").split("=", limit = 2).let { it[0].trim() to it[1].trim() }
+        }
+        assertEquals("TERM-001", entries[TerminalContext.BAGGAGE_TERMINAL_ID])
+        assertEquals("STORE-001", entries[TerminalContext.BAGGAGE_STORE_ID])
+        assertEquals(1, received["Baggage"]?.size, "baggage 헤더는 하나여야 한다: ${received["Baggage"]}")
+        assertFalse(baggage.contains("SPOOFED"))
         assertEquals(listOf("payment:write,payment:read"), received[TerminalContext.HEADER_TERMINAL_SCOPES])
+        assertNull(received[TerminalContext.HEADER_TERMINAL_ID])
+        assertNull(received[TerminalContext.HEADER_STORE_ID])
+        assertNull(received[TerminalContext.BAGGAGE_TERMINAL_ID])
+        assertNull(received[TerminalContext.BAGGAGE_STORE_ID])
         assertNull(received["X-Store-Role"])
-        assertNull(received["Baggage"])
     }
 
     @Test
@@ -249,6 +263,39 @@ class GatewayE2ETest {
         assertEquals(responseId, downstreamRequestHeaders.get()?.getFirst(TraceContextConstants.HEADER_REQUEST_ID))
     }
 
+    @Test
+    @DisplayName("서로 다른 단말 50개가 동시에 요청해도 각 요청은 자기 토큰의 terminalId·storeId만 baggage로 전달한다(요청 간 섞임 없음).")
+    fun keepsTerminalBaggageIsolatedUnderConcurrency() {
+        val webClient = WebClient.create("http://localhost:$port")
+        val requestCount = 50
+
+        Flux.range(0, requestCount)
+            .flatMap({ i ->
+                val token = createRs256Token(
+                    KEY_1,
+                    subject = "TERM-$i",
+                    storeId = "STORE-$i",
+                    jti = "jti-$i",
+                    expirationTime = Instant.now().plus(Duration.ofMinutes(10)),
+                )
+                webClient.get().uri("/api/v1/payments/concurrency-$i")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+                    .retrieve()
+                    .toBodilessEntity()
+            }, requestCount)
+            .collectList()
+            .block(Duration.ofSeconds(30))
+
+        (0 until requestCount).forEach { i ->
+            val baggage = assertNotNull(downstreamBaggageByPath["/api/v1/payments/concurrency-$i"], "요청 ${i}의 baggage가 없습니다")
+            val entries = baggage.split(",").associate { entry ->
+                entry.substringBefore(";").split("=", limit = 2).let { it[0].trim() to it[1].trim() }
+            }
+            assertEquals("TERM-$i", entries[TerminalContext.BAGGAGE_TERMINAL_ID], "요청 ${i}: $baggage")
+            assertEquals("STORE-$i", entries[TerminalContext.BAGGAGE_STORE_ID], "요청 ${i}: $baggage")
+        }
+    }
+
     private fun validToken(): String =
         createRs256Token(KEY_1, expirationTime = Instant.now().plus(Duration.ofMinutes(10)))
 
@@ -274,11 +321,13 @@ class GatewayE2ETest {
 
     companion object {
         private val downstreamRequestHeaders = AtomicReference<Headers?>()
+        private val downstreamBaggageByPath = ConcurrentHashMap<String, String>()
 
         // 하위 서비스(auth-service, payment-ledger-service) 역할. 게이트웨이가 넘긴 헤더를 기록한다.
         private val downstream: HttpServer = HttpServer.create(InetSocketAddress("localhost", 0), 0).apply {
             createContext("/") { exchange ->
                 downstreamRequestHeaders.set(exchange.requestHeaders)
+                exchange.requestHeaders.getFirst("Baggage")?.let { downstreamBaggageByPath[exchange.requestURI.path] = it }
                 exchange.sendResponseHeaders(HttpStatus.OK.value(), -1)
                 exchange.close()
             }

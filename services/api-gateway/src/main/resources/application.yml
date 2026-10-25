@@ -54,9 +54,3 @@ management:
     sampling:
       # 샘플링 결정은 Collector(tail sampling)에서 한다(ARCHITECTURE 5장). 앱은 모두 기록해서 넘긴다.
       probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
-    # 단말 컨텍스트는 설정으로 선언한다(ADR-0002). 외부 baggage는 추출 단계(InboundBaggageRejectingPropagator)와
-    # 헤더 전달 단계(HeaderSanitizer) 양쪽에서 버린다.
-    baggage:
-      remote-fields: terminalId, storeId
-      correlation:
-        fields: terminalId, storeId

@@ -6,7 +6,9 @@ import io.aegis.services.gateway.application.exception.GatewayErrorCode
 import io.aegis.services.gateway.application.exception.GatewayErrorMessage
 import io.aegis.services.gateway.application.port.`in`.AuthenticateTokenUseCase
 import io.aegis.services.gateway.config.GatewayAuthProperties
+import io.micrometer.tracing.Tracer
 import kotlinx.coroutines.reactor.mono
+import org.slf4j.LoggerFactory
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
 import org.springframework.cloud.gateway.filter.GlobalFilter
 import org.springframework.core.Ordered
@@ -22,7 +24,10 @@ import reactor.core.publisher.Mono
 class JwtAuthenticationGlobalFilter(
     properties: GatewayAuthProperties,
     private val authenticateTokenUseCase: AuthenticateTokenUseCase,
+    private val tracer: Tracer,
 ) : GlobalFilter, Ordered {
+
+    private val log = LoggerFactory.getLogger(javaClass)
 
     private val permitAllPatterns = properties.permitAllPaths.map { pattern ->
         PathPatternParser.defaultInstance.parse(pattern)
@@ -48,7 +53,7 @@ class JwtAuthenticationGlobalFilter(
                     detail = GatewayErrorMessage.REASON_MISSING_BEARER_TOKEN,
                 )
             val claims = authenticateTokenUseCase.authenticate(token)
-            injectTerminalHeaders(exchange, claims.terminalContext)
+            injectTerminalContext(exchange, claims.terminalContext)
         }.flatMap { authenticatedExchange ->
             chain.filter(authenticatedExchange)
         }
@@ -66,14 +71,14 @@ class JwtAuthenticationGlobalFilter(
         return authHeader.substring(BEARER_PREFIX.length).trim().takeIf { it.isNotEmpty() }
     }
 
-    private fun injectTerminalHeaders(
+    private fun injectTerminalContext(
         exchange: ServerWebExchange,
         terminalContext: TerminalContext,
     ): ServerWebExchange {
+        attachTerminalBaggage(terminalContext)
+
         val mutatedRequest = exchange.request.mutate()
             .headers { httpHeaders ->
-                httpHeaders.set(TerminalContext.HEADER_TERMINAL_ID, terminalContext.terminalId)
-                httpHeaders.set(TerminalContext.HEADER_STORE_ID, terminalContext.storeId)
                 if (terminalContext.scopes.isNotEmpty()) {
                     httpHeaders.set(
                         TerminalContext.HEADER_TERMINAL_SCOPES,
@@ -84,6 +89,16 @@ class JwtAuthenticationGlobalFilter(
             .build()
 
         return exchange.mutate().request(mutatedRequest).build()
+    }
+
+    private fun attachTerminalBaggage(terminalContext: TerminalContext) {
+        val traceContext = tracer.currentTraceContext().context()
+        if (traceContext == null) {
+            log.error("No trace context to carry terminal baggage: terminalId={}", terminalContext.terminalId)
+            return
+        }
+        tracer.createBaggage(TerminalContext.BAGGAGE_TERMINAL_ID).set(traceContext, terminalContext.terminalId)
+        tracer.createBaggage(TerminalContext.BAGGAGE_STORE_ID).set(traceContext, terminalContext.storeId)
     }
 
     companion object {
