@@ -9,14 +9,14 @@
 
 | 모듈 | 상태 | 테스트 | 메모 |
 |---|---|---|---|
-| `libs:platform-core` | ✅ | `BusinessExceptionTest`, `ErrorMessageTest` | `BusinessException.detail` 추가(ADR-0001) |
+| `libs:platform-core` | ✅ | `BusinessExceptionTest`, `ErrorMessageTest`, `SuccessResponseSerializationTest`(mvc-starter에서 JSON 구조 확인) | `BusinessException.detail` 추가(ADR-0001). 성공 응답 `SuccessResponse<T>`(ADR-0009). `ErrorResponse` 필드 순서를 `timestamp, code, message, path, errors`로 변경(생성자 파라미터 순서가 바뀌어 바이너리 비호환이지만, 저장소 안에서 `of()`로만 생성하고 아직 배포 전이라 영향 없음). `CommonErrorCode.NOT_FOUND`/`METHOD_NOT_ALLOWED`(K-15) |
 | `libs:platform-mvc-starter` | ✅ | `CurrentTerminalArgumentResolverTest`, `GlobalExceptionHandlerTest`, `SensitiveHeaderMaskingFilterTest` | |
-| `libs:platform-webflux-starter` | ✅ | 없음 | 전역 예외 처리기 테스트 필요(detail 비노출) |
+| `libs:platform-webflux-starter` | ✅ | `ReactiveGlobalExceptionHandlerTest` | 404/405를 500으로 바꾸던 문제 수정(K-15) |
 | `libs:platform-lock-starter` | ✅ | 없음 | Redisson 기반. 락 해제 보장·lease 테스트 필요 |
 | `libs:platform-http-client-starter` | ✅ | `HttpHeaderPropagatorTest`, `RestClientTargetPropagationTest`, `WebClientTargetPropagationTest` | `HttpClientSpec.target`(기본 `EXTERNAL`)으로 내부 식별자·baggage 전파 범위를 나눈다(K-3). Boot 4 client builder 모듈 포함(K-11) |
 | `libs:platform-observability-starter` | ✅ | `RequestIdsTest`, `ReactiveTraceFilterTest`, `ServletTraceMdcFilterTest` | `spring-boot-starter-opentelemetry` 기반(K-1 해결). Request ID는 헤더 + MDC(ADR-0002). 코루틴은 `mono(PropagationContextElement())` 필요(테스트로 확인) |
-| `services:api-gateway` | 🚧 | `JwksKeyProviderTest`, `JwtTokenVerifierTest`, `InboundBaggageRejectingPropagatorTest`, `GatewayE2ETest` | M1·M2 완료. JWT 기반 단말 baggage 설정은 📋 |
-| `services:auth-service` | 📋 | — | 코드 없음 |
+| `services:api-gateway` | 🚧 | `HexagonalArchitectureTest`(ArchUnit, ADR-0008), `JwksKeyProviderTest`, `JwtTokenVerifierTest`, `InboundBaggageRejectingPropagatorTest`, `GatewayE2ETest` | M1·M2 완료. JWT 기반 단말 baggage 설정은 📋 |
+| `services:auth-service` | 🚧 | `HexagonalArchitectureTest`(ArchUnit, ADR-0008), `TerminalPersistenceAdapterTest`(Testcontainers MySQL 8.4), `KmsJwtSignerTest`(Testcontainers LocalStack 4.14.0 + compose와 같은 init 스크립트), `TerminalPublicKeysTest`, `TerminalTest`, `ScopesConverterTest`, `TokenIssueServiceTest`, `ChallengeServiceTest`, `TerminalSignaturesTest`, `RedisChallengeStoreTest`(Testcontainers Valkey 8.0), `AuthServiceApplicationTest`(challenge → token 전체 흐름, JWKS) | M3 2~4단계: challenge(`/api/v1/auth/challenge`, Redis 1회용 nonce 60초)·토큰 발급(`/api/v1/auth/token`, ECDSA P-256 서명 검증, 재전송 401)(ADR-0010). 기동 골격, `infra/mysql/init/02-aegis-auth-schema.sql`의 `terminal` 테이블(단말 공개키·store·scopes·상태, 테스트도 같은 파일 사용), JPA `validate`. 단말 키는 EC P-256(SPKI DER base64). `KmsJwtSigner`: RS256, KMS `Sign`(`DIGEST`), `kid`=JWK thumbprint, 키는 기동 시 1회 로드(없으면 기동 실패), 서명 실패는 503 `TOKEN_SIGNING_UNAVAILABLE`. `GET /api/v1/auth/jwks`(내부 전용). 단말 등록 API·challenge 요청량 제한·alias 전환 반영은 📋 |
 | `services:payment-ledger-service` | 📋 | — | 코드 없음 |
 | `services:realtime-broker-service` | 📋 | — | 코드 없음 |
 | `simulators:terminal-simulator` | 📋 | — | 코드 없음 |
@@ -35,9 +35,11 @@
 | JWKS 기동 시 warm-up, 적재 전 readiness false | 📋 K-12 |
 | 트레이싱: 클라이언트 trace를 이어받아 게이트웨이 span 생성, `X-Trace-Id` 응답 헤더 | ✅ (K-4 해결) |
 | Request ID 검증·교체 후 하위 전달, 응답 헤더 | ✅ |
-| permit-all 경로 설정화 (`/api/v1/auth/token`, `/.well-known/jwks.json`) | ✅ |
+| permit-all 경로 설정화 (`/api/v1/auth/token`) | ✅ |
+| 외부 차단 경로 (`blocked-paths`: `/api/v1/auth/jwks`, 토큰이 있어도 404) | ✅ |
 | JWT 검증: RS256 고정, `kid` 필수, `sub`/`storeId`/`jti` 필수, `exp` + 30초 leeway | ✅ |
-| JWT 검증: `iss`/`aud`/`nbf`/`iat` | 📋 (auth-service 클레임 설계와 함께 결정) |
+| JWT 검증: `iss`/`aud` | ✅ auth-service와 같은 값(`JWT_ISSUER`, `JWT_AUDIENCE`) 확인(ADR-0010). `nbf`는 발급하지 않음 |
+| permit-all에 `/api/v1/auth/challenge` 추가 | ✅ |
 | JWKS 캐시: `refreshAfterWrite` + `expireAfterWrite`, 모르는 `kid`일 때 cooldown 내 1회 강제 갱신 | ✅ (ADR-0003) |
 | Blacklist: Redis 200ms timeout, 실패 시 503 fail-closed | ✅ |
 | 인증 실패 원인은 `BusinessException.detail`로 로그에만 기록 | ✅ |
@@ -61,11 +63,13 @@
 | K-11 | ~~platform HTTP client가 tracing으로 계측되지 않는다.~~ Boot 4는 `RestClient.Builder`/`WebClient.Builder` auto-configuration을 `spring-boot-restclient`/`spring-boot-webclient`로 분리했는데 classpath에 없어서, 팩토리가 계측되지 않은 기본 builder로 fallback했다(`traceparent`·client span 없음). gateway의 JWKS 호출도 해당 | `*TargetPropagationTest`(수정 전 `traceparent: null`) | 해결: http-client starter가 두 모듈을 `api`로 포함. builder 빈이 없으면 WARN 로그를 남긴다. MVC 서비스에도 `spring-webflux` jar가 함께 들어가지만 web application type 판정(MVC 우선)과 reactive 팩토리 생성 조건에는 영향이 없다 |
 | K-12 | api-gateway의 JWKS 캐시가 **지연 로딩**이다. gateway 기동 시 auth-service가 내려가 있으면 캐시가 비어 있어 "기존 키 유지" 방어가 작동하지 않고, 복구될 때까지 모든 인증 요청이 503(`JWKS_FETCH_FAILED`)이 된다. 첫 요청도 JWKS 호출만큼 느려진다 | `JwksKeyProvider`(첫 `getPublicKey`에서 적재) | M3: 기동 시 warm-up + 적재 전 readiness false(ADR-0003 보강) |
 | K-13 | 단말 컨텍스트 전파 경로가 둘 다 비어 있다. MDC에 `terminalId`/`storeId`를 넣는 운영 코드가 없어 `HttpHeaderPropagator`의 MDC → `X-Terminal-Id` 복사가 실제로는 동작하지 않고, gateway가 baggage를 설정하는 코드도 없다 | 코드 검색(2026-10-25) | baggage로 일원화(ADR-0007): gateway baggage 설정, MDC → 헤더 복사 제거, `@CurrentTerminal`은 baggage에서 읽음 |
+| K-14 | 스키마를 마이그레이션 도구 없이 `infra/mysql/init/*.sql`로 관리한다. MySQL 컨테이너는 **빈 볼륨으로 처음 뜰 때만** init SQL을 실행하므로, 스키마를 바꾸면 기존 로컬 볼륨에는 반영되지 않고 적용 이력도 남지 않는다 | `docker-entrypoint-initdb.d` 동작 | 로컬: `docker compose down -v` 후 재기동. 변경은 새 번호 파일(`03-...sql`)로 추가하고 운영 반영 절차는 배포 단계(M3 이후)에서 정한다 |
+| K-15 | ~~공통 예외 처리기가 처리 대상을 정하지 않은 예외를 모두 500으로 바꿔서, 없는 경로(404)·지원하지 않는 메서드(405)도 500 + ERROR 로그가 됐다~~ | `GatewayE2ETest`(라우트 없는 경로), `ReactiveGlobalExceptionHandlerTest`, `GlobalExceptionHandlerTest` | 해결: WebFlux·MVC 처리기에 `NoResourceFoundException`/`NoHandlerFoundException` → 404, `MethodNotAllowedException`/`HttpRequestMethodNotSupportedException` → 405 추가. `CommonErrorCode`에 `NOT_FOUND`, `METHOD_NOT_ALLOWED` 추가(enum 상수 추가는 바이너리 호환) |
 
 ## 4. 결정됐지만 구현 전 (M3)
 
 | 결정 | 근거 |
 |---|---|
-| JWT 서명 비밀키는 KMS에 두고 서명만 위임. 로컬 KMS 인프라는 준비됨(LocalStack 4.14.0), auth-service 코드는 구현 전 | ADR-0006 |
+| JWT 서명 비밀키는 KMS에 두고 서명만 위임 — 서명·JWKS 구현 완료. 키 교체(alias 전환을 앱이 반영)는 구현 전 | ADR-0006 |
 | 단말 컨텍스트는 baggage 하나로 전파, scopes는 `X-Terminal-Scopes`로 첫 서비스까지만 | ADR-0007 |
-| auth-service부터 MySQL 사용 — docker-compose 전환 완료, auth-service 코드는 구현 전 | ADR-0004 3항 |
+| auth-service부터 MySQL 사용 — docker-compose 전환, `terminal` 테이블(init SQL) 완료 | ADR-0004 3항 |

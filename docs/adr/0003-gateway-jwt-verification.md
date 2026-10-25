@@ -11,7 +11,8 @@
 | JWKS 캐시 | Caffeine `refreshAfterWrite`(30m) + `expireAfterWrite`(6h) | 백그라운드 갱신 실패 시 기존 키 유지(stale-while-revalidate). auth-service 장애가 곧바로 게이트웨이 장애로 번지지 않게 한다 |
 | 모르는 `kid` | 시도 시각 기준 `AtomicLong` CAS cooldown(30s) 안에서 1회만 강제 갱신. 갱신 실패 시 기존 키 유지, 401 | 키 로테이션 대응. 위조 kid 폭격이 auth-service로 전파되지 않게 하고, 위조 토큰은 503이 아니라 401로 분류 |
 | Blacklist | Redis `hasKey`, 200ms timeout, 실패 시 **503 fail-closed** | 결제 도메인에서 폐기 토큰 통과는 허용 불가. 의도한 fail-closed임을 코드와 에러 코드(`TOKEN_STORE_UNAVAILABLE`)로 명시 |
-| 인증 예외 경로 | 설정(`permit-all-paths`)으로 관리, `/api/v1/auth/token`, `/.well-known/jwks.json`만 허용 | 하드코딩 이중 관리 제거, logout 등은 토큰 필요 |
+| 인증 예외 경로 | 설정(`permit-all-paths`)으로 관리, `/api/v1/auth/token`만 허용 | 하드코딩 이중 관리 제거, logout 등은 토큰 필요 |
+| JWKS 경로 (2026-10-25 변경) | `/api/v1/auth/jwks`. gateway가 내부망으로 auth-service에 직접 호출한다. 외부 요청은 `blocked-paths`로 토큰이 있어도 404 | 공개키를 가져가는 쪽은 gateway뿐이라 외부에 열 이유가 없다. 예전 `/.well-known/jwks.json`은 몇몇 제품의 관례일 뿐 표준 경로가 아니다(RFC 8615는 `/.well-known/` 접두사만 정한다). 외부 검증 주체가 생기면 그때 공개 경로를 다시 정한다 |
 | 응답·로그 | 응답은 고정 문구, 원인은 `detail`로 로그에만 (ADR-0001) | 검증 단계 정보 노출 방지 |
 
 ## JWKS 캐시 동작 (2026-10-25 보강)

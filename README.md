@@ -28,7 +28,7 @@ aegis-pay-platform/
 │   └── platform-observability-starter     # ✅ OpenTelemetry 연동(Boot 4 starter), Request ID 헤더·MDC 전파
 ├── services/                              # 서비스 (bootJar = true, jar = false)
 │   ├── api-gateway                        # 🚧 Spring Cloud Gateway, Header Sanitizer, JWKS 캐시 JWT 검증, Blacklist, 외부 baggage 차단
-│   ├── auth-service                       # 📋 RS256 JWT 발급(KMS 서명 위임), JWKS, 서명키 로테이션
+│   ├── auth-service                       # 🚧 단말 challenge 인증·토큰 발급, KMS 서명(RS256), JWKS / 📋 단말 등록 API, 서명키 로테이션
 │   ├── payment-ledger-service             # 📋 멱등성, 락-트랜잭션 분리, 망취소, Transactional Outbox
 │   └── realtime-broker-service            # 📋 Kafka 멱등 컨슈머, SSE 연결 관리
 └── simulators/
@@ -57,8 +57,16 @@ docker compose up -d --wait
 # 상태 확인
 docker compose ps
 
-# 종료
+# 종료(볼륨까지 지우면 init SQL이 다시 실행된다: docker compose down -v)
 docker compose down
+```
+
+### 서비스 실행
+
+```bash
+# auth-service: local 프로필은 LocalStack KMS(localhost:4566, 고정 test 자격 증명)를 쓴다
+SPRING_PROFILES_ACTIVE=local ./gradlew :services:auth-service:bootRun
+curl -s localhost:8081/api/v1/auth/jwks
 ```
 
 ### 빌드와 테스트
@@ -67,6 +75,7 @@ docker compose down
 ./gradlew build
 ./gradlew :libs:platform-core:test
 ./gradlew :services:api-gateway:test
+./gradlew :services:auth-service:test   # Docker 필요(Testcontainers: MySQL 8.4, LocalStack 4.14.0, Valkey 8.0)
 ```
 
 ---
@@ -94,8 +103,8 @@ docker compose down
 | :--- | :--- | :--- |
 | **Language & Runtime** | Kotlin `2.3.21`, Java `21` | |
 | **Framework** | Spring Boot `4.1.1`, Spring Cloud `2025.1.3` | Gateway(WebFlux) + 서비스(MVC). Boot 4는 auto-configuration이 기술별 모듈로 분리됨 |
-| **Database & Lock** | MySQL `8.4`, Valkey `8.0` (Redisson `4.8.0`) | 서비스별 DB(`aegis_auth` …), 분산 락 |
+| **Database & Lock** | MySQL `8.4`, Valkey `8.0` (Redisson `4.8.0`) | 서비스별 DB(`aegis_auth` …), 스키마는 `infra/mysql/init/*.sql`(마이그레이션 도구 없음), JPA는 `validate`만. 분산 락 |
 | **Messaging** | Apache Kafka `3.9.0` (KRaft) | Transactional Outbox |
 | **Key Management** | AWS KMS (로컬: LocalStack `4.14.0`, 토큰 불필요) | JWT 서명키, ADR-0006 |
 | **Resilience & Observability** | Resilience4j, Micrometer, OpenTelemetry, Prometheus, Grafana | 트레이싱 연결 완료. 메트릭 수집 방식은 M7에서 결정 ([STATUS K-10](./docs/STATUS.md)) |
-| **Testing** | JUnit `6`, Kotlin Test | 경계값·장애 복구 중심 행위 검증 |
+| **Testing** | JUnit `6`, Kotlin Test, Testcontainers `2.0.5` | 경계값·장애 복구 중심 행위 검증. DB 테스트는 운영과 같은 MySQL 8.4 컨테이너로(Docker 필요) |

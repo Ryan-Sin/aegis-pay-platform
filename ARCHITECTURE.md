@@ -33,9 +33,9 @@
 ## 3. 전체 데이터 흐름
 
 ### [Flow 1] 단말기 부팅과 토큰 발급
-1. `terminal-simulator`가 기기 내 비밀키로 Challenge에 전자서명해서 `POST /api/v1/auth/token`을 호출한다(단일 진입점 `api-gateway`).
-2. `api-gateway`는 **`/api/v1/auth/token`과 `/.well-known/jwks.json`만** 인증 없이 통과시킨다(`aegis.gateway.auth.permit-all-paths`). logout 등 나머지 `/api/v1/auth/**`는 토큰이 필요하다.
-3. `auth-service`는 DB에 등록된 **단말 공개키**로 서명을 검증한 뒤, **KMS의 JWT 서명키(RS256, 헤더에 `kid` 포함)**로 JWT(유효기간 12시간)에 서명해 발급한다. 비밀키는 KMS 밖으로 나오지 않고 auth-service는 서명을 위임한다. JWKS에는 로테이션 기간 동안 **이전 키와 새 키가 함께** 게시된다(ADR-0006).
+1. `terminal-simulator`가 `POST /api/v1/auth/challenge`로 1회용 nonce(60초)를 받고, `aegis-auth-v1\n{terminalId}\n{nonce}`를 기기 내 비밀키(ECDSA P-256)로 서명해서 `POST /api/v1/auth/token`을 호출한다(단일 진입점 `api-gateway`, ADR-0010).
+2. `api-gateway`는 **`/api/v1/auth/challenge`, `/api/v1/auth/token`만** 인증 없이 통과시킨다(`aegis.gateway.auth.permit-all-paths`). JWKS(`/api/v1/auth/jwks`)는 내부 전용이라 외부 요청을 404로 막는다(`blocked-paths`, ADR-0003). logout 등 나머지 `/api/v1/auth/**`는 토큰이 필요하다.
+3. `auth-service`는 nonce를 꺼내면서 바로 삭제하고(재전송 방지), DB에 등록된 **단말 공개키**로 서명을 검증한 뒤, **KMS의 JWT 서명키(RS256, 헤더에 `kid` 포함)**로 JWT(유효기간 12시간, `iss=aegis-auth-service`, `aud=aegis-api`)에 서명해 발급한다. 비밀키는 KMS 밖으로 나오지 않고 auth-service는 서명을 위임한다. JWKS에는 로테이션 기간 동안 **이전 키와 새 키가 함께** 게시된다(ADR-0006).
 4. 이후 요청은 `api-gateway`가 JWKS에서 받아 캐시한 **JWT 서명 공개키**로 검증한다. gateway는 KMS에 접근하지 않는다.
 
 키쌍은 두 종류다. 같은 주체의 비밀키로 **서명**하고 그 공개키로 **검증**한다(암호화가 아니다. JWT payload는 누구나 읽을 수 있다).
@@ -72,7 +72,7 @@
 ## 4. 모듈별 역할과 설계 규칙
 
 ### A. 공통 플랫폼 라이브러리 (`libs/`, `jar = true`, `bootJar = false`)
-- **`platform-core`**: 웹 프레임워크에 종속되지 않는 순수 공통 모듈. `TerminalContext`(헤더·클레임 상수 포함), `BusinessException`(외부 노출용 `message`와 내부 로깅용 `detail` 분리, ADR-0001), `ErrorCode`/`CommonErrorCode`, `ErrorMessage`, `ErrorResponse`.
+- **`platform-core`**: 웹 프레임워크에 종속되지 않는 순수 공통 모듈. `TerminalContext`(헤더·클레임 상수 포함), `BusinessException`(외부 노출용 `message`와 내부 로깅용 `detail` 분리, ADR-0001), `ErrorCode`/`CommonErrorCode`, `ErrorMessage`, `ErrorResponse`, 성공 응답 `SuccessResponse<T>`(ADR-0009).
 - **`platform-mvc-starter`**: Spring MVC 서비스용. `@CurrentTerminal` ArgumentResolver, 전역 예외 처리(`detail`은 로그에만), `Authorization` 헤더 `[MASKED]` 로깅 필터.
 - **`platform-webflux-starter`**: Spring WebFlux 서비스(`api-gateway` 등)용. Reactive 전역 예외 처리, 민감 헤더 마스킹 `WebFilter`.
 - **`platform-lock-starter`**: `@DistributedLock`, SpEL 동적 키 파서, Redisson 기반 분산 락 AOP. DB 트랜잭션과 결합하지 않는다.
@@ -86,7 +86,7 @@
 
 ### B. 서비스 (`services/`, `bootJar = true`, `jar = false`)
 - **`api-gateway`**: Spring Cloud Gateway(WebFlux/Netty), Header Sanitizer, 외부 baggage 추출 차단, JWT 검증(JWKS 캐시, 기동 시 warm-up), Blacklist, 단말 컨텍스트 baggage 설정.
-- **`auth-service`**: 단말 공개키 관리(MySQL), RS256 JWT 발급(KMS 서명 위임), `GET /.well-known/jwks.json`, 서명키 로테이션(새 KMS 키 + alias 전환).
+- **`auth-service`**: 단말 공개키 관리(MySQL), RS256 JWT 발급(KMS 서명 위임), `GET /api/v1/auth/jwks`(내부 전용), 서명키 로테이션(새 KMS 키 + alias 전환).
 - **`payment-ledger-service`**: 멱등성, 복식부기 원장, VAN 승인 연동과 타임아웃 시 망취소, Transactional Outbox.
 - **`realtime-broker-service`**: Kafka 멱등 컨슈머, SSE 연결 관리(인스턴스 간 라우팅, drain, 재전송).
 

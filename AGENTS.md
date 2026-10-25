@@ -50,6 +50,8 @@
 - 용어: 단말 소속 식별자는 **Store**(`X-Store-Id`, claim `storeId`)다. `Merchant`는 쓰지 않는다.
 - 신뢰 경계: `X-Terminal-*`, `X-Store-*` 헤더와 단말 컨텍스트 baggage는 **api-gateway만** JWT 검증 결과로 설정한다. 외부에서 들어온 값은 게이트웨이에서 제거한다.
 - 예외: 클라이언트 응답 문구는 `BusinessException.message`, 운영 로그용 원인은 `BusinessException.detail`에 담는다(ADR-0001). 서비스별 예외 서브클래스를 만들지 않는다.
+- 응답 형식: 성공은 `SuccessResponse<T>`를 컨트롤러 반환 타입으로 직접 쓰고, 실패는 `ErrorResponse`다. 표준 형식이 정해진 응답(JWKS)만 감싸지 않는다(ADR-0009).
+- 서비스 내부 패키지는 헥사고날(`domain` ← `application`(port/in, port/out, service) ← `adapter`(in, out))로 나눈다(ADR-0008). 각 서비스의 `HexagonalArchitectureTest`가 의존 방향을 검사한다.
 - 공통 라이브러리(`libs/`)의 public API를 바꿀 때는 **바이너리 호환성**을 함께 검토한다(생성자·메서드 시그니처 변경은 이미 컴파일된 사용처를 깨뜨린다).
 
 ## 6. 금지 패턴 (실제로 발생했던 실수)

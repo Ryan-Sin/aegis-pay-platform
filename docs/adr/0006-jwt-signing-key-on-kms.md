@@ -1,6 +1,6 @@
 # ADR-0006: JWT 서명 비밀키는 KMS에 두고 서명만 위임한다 (로컬은 LocalStack)
 
-- 상태: 채택 (2026-10-25), **구현 전**(커리큘럼 M3)
+- 상태: 채택 (2026-10-25), **서명·JWKS 구현됨**, 키 교체는 구현 전(커리큘럼 M3)
 - 범위: `services:auth-service`, `docker-compose.yml`, api-gateway(검증 측은 변경 없음)
 
 ## 배경
@@ -10,7 +10,7 @@
 |---|---|---|
 | 용도 | 단말이 "나는 진짜 TERM-001이다"를 증명 | auth-service가 발급한 JWT가 위조되지 않았음을 보장 |
 | 비밀키 위치 | 단말 기기 안(Secure Element). 기기 밖으로 나오지 않는다 | **KMS**(이 ADR의 결정) |
-| 공개키 위치 | auth-service DB(단말 등록 시 저장) | JWKS(`/.well-known/jwks.json`)로 게시, api-gateway가 캐시 |
+| 공개키 위치 | auth-service DB(단말 등록 시 저장) | JWKS(`/api/v1/auth/jwks`, 내부 전용)로 게시, api-gateway가 캐시 |
 | 서명 / 검증 | 단말이 서명 / auth-service가 검증 | auth-service가(KMS를 통해) 서명 / api-gateway가 검증 |
 | 개수 | 단말마다 1쌍 | 플랫폼 전체 1쌍(교체 기간에만 2쌍) |
 
@@ -38,7 +38,7 @@
 
 ### 2. 환경별 KMS
 - 운영: AWS KMS. 로컬(Tier 1): **LocalStack KMS**. 같은 AWS SDK 코드에서 endpoint 설정만 다르다.
-- 서명 코드는 `JwtSigner` 인터페이스로 분리해서 테스트용 in-memory 구현을 둔다.
+- 서명 코드는 `JwtSignerPort`(application 출력 포트)로 분리한다(ADR-0008).
 
 ### 3. 최초 키 생성은 인프라 단계에서 한 번 한다 (앱은 키를 만들지 않는다)
 앱은 alias만 설정으로 받는다. 키가 없으면 기동에 실패한다(조용히 로컬 키를 만들지 않는다).
@@ -84,16 +84,17 @@ AWS KMS 비대칭키는 자동 교체와 on-demand 교체를 지원하지 않는
 ```
 api-gateway는 모르는 `kid`를 받으면 cooldown 안에서 1회 강제 갱신하므로(ADR-0003) 2단계를 건너뛰어도 실패하지는 않는다. 2단계는 그 강제 갱신조차 일어나지 않게 하기 위한 것이다.
 
-### 6. 소스 코드 구조 (예정)
+### 6. 소스 코드 구조 (구현됨, ADR-0008 패키지 규칙)
 ```kotlin
-interface JwtSigner {
-    fun sign(signingInput: ByteArray): JwsSignature   // 서명값 + kid
-    fun publicKeys(): List<RSAKey>                     // JWKS 게시용: 서명 키 + 검증 유지 키
+interface JwtSignerPort {                       // application/port/out
+    fun sign(claims: JWTClaimsSet): SignedJWT   // 헤더(RS256, typ=JWT, kid=thumbprint)까지 만들어 서명
+    fun publicJwkSet(): JWKSet                  // JWKS 게시용: 서명 키 + 검증 유지 키
 }
 
-class KmsJwtSigner(kmsClient, properties) : JwtSigner   // AWS SDK KMS. Sign(DIGEST), GetPublicKey(결과 캐시)
-class InMemoryJwtSigner : JwtSigner                    // 단위 테스트용
+class KmsJwtSigner(kmsClient, properties) : JwtSignerPort   // adapter/out/kms. AWS SDK v2 KMS. Sign(DIGEST), GetPublicKey는 기동 시 1회
 ```
+- alias를 `GetPublicKey` 응답의 실제 키 ARN으로 풀어 두고 **그 ARN으로 서명**한다. 서명 도중 alias가 바뀌어도 `kid`와 서명 키가 어긋나지 않는다.
+- 테스트는 in-memory 구현 대신 Testcontainers LocalStack(compose와 같은 이미지·init 스크립트)으로 한다. 실제 KMS API 형식까지 확인하기 위해서다.
 ```yaml
 aegis:
   auth:
@@ -101,8 +102,9 @@ aegis:
       signing-key: alias/aegis-jwt-signing          # 서명에 쓰는 키
       verification-keys:                            # JWKS에 함께 게시할 키(교체 기간)
         - alias/aegis-jwt-signing
-aws:   # 로컬에서만 endpoint를 LocalStack으로
-  kms.endpoint: ${KMS_ENDPOINT:http://localhost:4566}
+    kms:
+      region: ${AWS_REGION:ap-northeast-2}
+      # application-local.yml에서만: endpoint(LocalStack), 고정 test 자격 증명. 운영은 기본 자격 증명 체인
 ```
 - `GetPublicKey` 결과는 auth-service가 캐시한다. JWKS 요청마다 KMS를 호출하지 않는다.
 - 토큰 발급(12시간에 1회/단말)마다 KMS `Sign`을 1회 호출한다. 지연과 KMS 요청 한도는 M3에서 측정한다.
@@ -110,7 +112,7 @@ aws:   # 로컬에서만 endpoint를 LocalStack으로
 ## 기각한 대안
 - **비밀키를 파일·환경변수로 앱에 로드**: 가장 단순하지만 앱 서버가 침해되면 비밀키가 유출되고 위조가 영구화된다.
 - **Secrets Manager/Vault KV에 보관하고 앱이 꺼내서 서명**: 보관은 중앙화되지만 결국 비밀키가 앱 메모리에 올라온다.
-- **Vault Transit**: KMS와 같은 위임 모델이고 키 버전 교체가 쉽다. 목표 운영 환경을 AWS로 맞추기 위해 AWS KMS API를 택했다. `JwtSigner` 구현을 추가하면 전환할 수 있다.
+- **Vault Transit**: KMS와 같은 위임 모델이고 키 버전 교체가 쉽다. 목표 운영 환경을 AWS로 맞추기 위해 AWS KMS API를 택했다. `JwtSignerPort` 구현(adapter)을 추가하면 전환할 수 있다.
 
 ## 결과
 - auth-service가 침해되어도 비밀키는 유출되지 않는다. 침해 기간 동안의 서명 API 오용은 권한 회수로 끊고 KMS 감사 로그로 추적한다.
@@ -120,7 +122,8 @@ aws:   # 로컬에서만 endpoint를 LocalStack으로
   - 한계: 업데이트·보안 패치를 받을 수 없다. 4.14 이미지의 라이선스 조건은 확인하지 않았다(확인 필요). 앱은 AWS SDK만 쓰므로 최신 버전 + 토큰으로 바꿀 때 이미지 태그만 바꾸면 된다. 최신 버전의 무료 Hobby 플랜은 비상업용이다.
 - 무료 LocalStack은 상태를 저장하지 않아서 재기동하면 같은 키 ID로 **다른 키 material**이 만들어진다. 재기동 전에 발급한 JWT는 검증에 실패하고, `kid`(공개키 thumbprint)가 바뀌므로 gateway는 강제 갱신으로 새 공개키를 받는다. 로컬에서는 재발급으로 대응한다.
 - LocalStack은 에뮬레이터라 IAM 권한·실제 HSM 보호는 검증할 수 없다. 해당 동작은 운영 환경에서만 확인된다.
-- 확인 필요(구현 시): LocalStack 초기화 스크립트 경로·실행 시점, LocalStack KMS의 `Sign`(`DIGEST`)·`GetPublicKey` 응답 형식이 AWS와 같은지, alias가 첫 접근 이후에만 보이는 제약의 영향.
+- 구현 시 확인(2026-10-25, `KmsJwtSignerTest`): `Sign`(`DIGEST`) 결과는 표준 RS256 서명과 같다(JCA `SHA256withRSA`로 검증됨). `GetPublicKey`는 alias로 호출해도 실제 키 ARN을 돌려준다. alias 조회는 기동 직후에도 동작했다.
+- **LocalStack 리전 함정**: init 스크립트(`awslocal`)는 `AWS_DEFAULT_REGION`이 없으면 `us-east-1`에 키를 만든다. 앱(`ap-northeast-2`)이 alias를 못 찾아 기동에 실패하는 것을 실제 실행에서 확인했고, compose에 `AWS_DEFAULT_REGION: ap-northeast-2`를 넣어 고쳤다.
 
 ## 참고
 - LocalStack KMS 지원 범위: https://docs.localstack.cloud/aws/services/kms/
