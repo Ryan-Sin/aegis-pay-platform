@@ -20,7 +20,8 @@ api-gateway는 공개키를 **auth-service의 JWKS**에서 받는다. KMS와 직
 
 | 시점 | 동작 | 설정 |
 |---|---|---|
-| 첫 요청 | 캐시가 비어 있으면 JWKS 호출 후 적재(지연 로딩) | — |
+| 기동 (2026-10-25 추가) | `ApplicationStartedEvent`에서 백그라운드로 JWKS 적재(warm-up). 실패하면 지수 backoff로 성공할 때까지 재시도. 그동안 요청이 오면 기존처럼 그 자리에서 적재를 시도한다 | `jwks-warm-up-initial-backoff: 1s`, `jwks-warm-up-max-backoff: 30s` |
+| 첫 요청 | warm-up 전이면 캐시가 비어 있으므로 JWKS 호출 후 적재 | — |
 | 평소 | 캐시로 검증, 네트워크 호출 없음 | — |
 | 갱신 주기 경과 | 요청은 기존 키로 처리하고 백그라운드 갱신. 실패 시 기존 키 유지 | `jwks-refresh-interval: 30m` |
 | 만료 | 다음 요청에서 다시 적재 | `jwks-cache-ttl: 6h` |
@@ -28,9 +29,16 @@ api-gateway는 공개키를 **auth-service의 JWKS**에서 받는다. KMS와 직
 
 키 교체 시: 새 `kid` 토큰이 처음 들어오면 강제 갱신으로 새 공개키를 받고, 이전 `kid` 토큰은 이전 공개키가 JWKS에 남아 있는 동안 계속 검증된다. auth-service 쪽 교체 절차는 ADR-0006 5절.
 
-### 알려진 한계: 기동 직후 auth-service 장애 (STATUS K-12)
-지연 로딩이라 gateway가 뜰 때 auth-service가 내려가 있으면 캐시가 비어 있어 "기존 키 유지" 방어가 작동하지 않는다. 복구될 때까지 모든 인증 요청이 503(`JWKS_FETCH_FAILED`)이 된다. 첫 요청도 JWKS 호출만큼 느려진다.
-- 개선 방향(M3): 기동 시 JWKS를 미리 적재(warm-up)하고, 적재 전에는 readiness를 false로 둬서 트래픽을 받지 않는다. liveness는 영향받지 않게 분리한다.
+### 기동 직후 auth-service 장애 (STATUS K-12, 2026-10-25 해결)
+지연 로딩만 있으면 gateway가 뜰 때 auth-service가 내려가 있을 경우 캐시가 비어 "기존 키 유지" 방어가 작동하지 않고, 복구될 때까지 모든 인증 요청이 503이 된다. 그래서 다음과 같이 보강했다.
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| warm-up | 기동 시 백그라운드에서 적재, 성공할 때까지 지수 backoff(1s→30s 상한)로 재시도 | 기동을 막지 않는다(블로킹 warm-up은 auth-service 장애 시 gateway 기동 실패 → 재시작 반복으로 번진다) |
+| readiness | `jwks` health indicator를 readiness 그룹에 포함. 적재 전 DOWN | 키가 없는 인스턴스로 트래픽이 가지 않게 한다 |
+| liveness | `livenessState`만. JWKS 상태는 넣지 않는다 | auth-service 장애로 gateway가 재시작되는 연쇄 장애 방지 |
+| 적재 후 | 한 번 적재되면 이후 갱신 실패와 무관하게 readiness UP 유지 | 갱신 실패 시에도 기존 키로 검증할 수 있다. auth-service 장애마다 모든 gateway가 트래픽에서 빠지면 토큰 발급 경로까지 막힌다 |
+| 키 없는 JWKS | `{"keys": []}`처럼 쓸 수 있는 RSA 키가 없으면 적재 실패로 처리 | 빈 키 집합으로 readiness가 UP이 되거나, 갱신 시 기존 키를 빈 집합으로 덮어쓰지 않게 한다 |
 
 ## 기각한 대안
 - **Spring Security OAuth2 Resource Server(`NimbusReactiveJwtDecoder`)**: JWKS 캐시, `kid` 미스 갱신, `iss`/`aud`, clock skew를 기본 제공한다. 운영 목적이라면 더 낮은 유지보수 비용이다. 다만 이 프로젝트는 JWKS 캐싱과 로테이션의 원리 학습이 목표라 직접 구현한다.

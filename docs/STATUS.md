@@ -32,7 +32,7 @@
 | Header Sanitizer (`baggage` 제거) | ✅ 헤더 전달 단계 |
 | 외부 baggage 추출 차단 (`InboundBaggageRejectingPropagator`) | ✅ 추출 단계(K-8, ADR-0005) |
 | 단말 컨텍스트 baggage(`terminalId`, `storeId`)를 JWT 검증 결과로 설정 | ✅ 서버 trace context에 `Baggage.set`(scope 열지 않음). `X-Terminal-Id`·`X-Store-Id` 주입 중단, scopes는 `X-Terminal-Scopes`(ADR-0007). 동시 요청 50개 섞임 없음 확인 |
-| JWKS 기동 시 warm-up, 적재 전 readiness false | 📋 K-12 |
+| JWKS 기동 시 warm-up, 적재 전 readiness false | ✅ `ApplicationStartedEvent`에서 백그라운드 warm-up(1s→30s 지수 backoff, 무한 재시도). `jwks` health indicator를 readiness 그룹에 포함, liveness는 제외. 한 번 적재되면 이후 갱신 실패와 무관하게 UP 유지. 키 없는 JWKS(`keys: []`)는 적재 실패로 처리(K-12) |
 | 트레이싱: 클라이언트 trace를 이어받아 게이트웨이 span 생성, `X-Trace-Id` 응답 헤더 | ✅ (K-4 해결) |
 | Request ID 검증·교체 후 하위 전달, 응답 헤더 | ✅ |
 | permit-all 경로 설정화 (`/api/v1/auth/token`) | ✅ |
@@ -43,7 +43,7 @@
 | JWKS 캐시: `refreshAfterWrite` + `expireAfterWrite`, 모르는 `kid`일 때 cooldown 내 1회 강제 갱신 | ✅ (ADR-0003) |
 | Blacklist: Redis 200ms timeout, 실패 시 503 fail-closed | ✅ |
 | 인증 실패 원인은 `BusinessException.detail`로 로그에만 기록 | ✅ |
-| 테스트 | ✅ `JwksKeyProvider`(cooldown·동시 위조 kid·갱신 실패·최초 적재 실패), `JwtTokenVerifier`(alg·kid·서명·leeway 경계·필수 클레임), E2E(스푸핑 헤더·baggage 교체, permit-all, 401/503 응답에 detail 비노출, trace·Request ID 전파) |
+| 테스트 | ✅ `JwksKeyProvider`(cooldown·동시 위조 kid·갱신 실패·최초 적재 실패·warm-up 재시도·적재 상태 유지), `GatewayReadinessTest`(적재 전 readiness 503·liveness 200, 복구 후 readiness 200), `JwtTokenVerifier`(alg·kid·서명·leeway 경계·필수 클레임), E2E(스푸핑 헤더·baggage 교체, permit-all, 401/503 응답에 detail 비노출, trace·Request ID 전파) |
 | `GlobalFilter`에서 던진 `BusinessException`을 `ReactiveGlobalExceptionHandler`(`@RestControllerAdvice`)가 처리 | ✅ (E2E에서 응답 body의 `code`로 확인) |
 
 ## 3. 알려진 문제
@@ -61,10 +61,12 @@
 | K-9 | ~~`./gradlew build`가 코드 없는 모듈과 집계 프로젝트(`:libs`, `:services`, `:simulators`)의 `bootJar`에서 실패한다~~ | `./gradlew build` | 해결: 플러그인은 하위 프로젝트가 없는 실제 모듈에만 적용하고, `bootJar`는 `src/main/kotlin`에 코드가 있는 서비스에서만 켠다 |
 | K-10 | `spring-boot-starter-opentelemetry`가 `micrometer-registry-otlp`를 포함해서 기본값으로 `localhost:4318`에 메트릭을 push한다 | 컨텍스트의 `OtlpMeterRegistry` 빈 확인 | api-gateway는 `management.otlp.metrics.export.enabled=${OTLP_METRICS_EXPORT_ENABLED:false}`. 다른 서비스도 같은 설정 필요. 메트릭 수집 방식(OTLP vs Prometheus)은 M7에서 결정 |
 | K-11 | ~~platform HTTP client가 tracing으로 계측되지 않는다.~~ Boot 4는 `RestClient.Builder`/`WebClient.Builder` auto-configuration을 `spring-boot-restclient`/`spring-boot-webclient`로 분리했는데 classpath에 없어서, 팩토리가 계측되지 않은 기본 builder로 fallback했다(`traceparent`·client span 없음). gateway의 JWKS 호출도 해당 | `*TargetPropagationTest`(수정 전 `traceparent: null`) | 해결: http-client starter가 두 모듈을 `api`로 포함. builder 빈이 없으면 WARN 로그를 남긴다. MVC 서비스에도 `spring-webflux` jar가 함께 들어가지만 web application type 판정(MVC 우선)과 reactive 팩토리 생성 조건에는 영향이 없다 |
-| K-12 | api-gateway의 JWKS 캐시가 **지연 로딩**이다. gateway 기동 시 auth-service가 내려가 있으면 캐시가 비어 있어 "기존 키 유지" 방어가 작동하지 않고, 복구될 때까지 모든 인증 요청이 503(`JWKS_FETCH_FAILED`)이 된다. 첫 요청도 JWKS 호출만큼 느려진다 | `JwksKeyProvider`(첫 `getPublicKey`에서 적재) | M3: 기동 시 warm-up + 적재 전 readiness false(ADR-0003 보강) |
+| K-12 | ~~api-gateway의 JWKS 캐시가 **지연 로딩**이다. gateway 기동 시 auth-service가 내려가 있으면 캐시가 비어 있어 "기존 키 유지" 방어가 작동하지 않고, 복구될 때까지 모든 인증 요청이 503(`JWKS_FETCH_FAILED`)이 된다. 첫 요청도 JWKS 호출만큼 느려진다~~ | `JwksKeyProviderTest`, `GatewayReadinessTest`, 실제 기동(auth-service 없이 readiness 503 → JWKS 서버 기동 후 재시작 없이 200) | 해결: 기동 시 warm-up + 적재 전 readiness DOWN(ADR-0003 보강). 단, readiness는 트래픽 차단 수단이라 로컬(쿠버네티스 없음)에서는 적재 전 요청이 여전히 503이 될 수 있다 |
 | K-13 | ~~단말 컨텍스트 전파 경로가 둘 다 비어 있다(MDC → 헤더 복사는 동작하지 않고, gateway가 baggage를 설정하지 않음)~~ | `GatewayE2ETest`, `CurrentTerminalBaggageIntegrationTest`, `*TargetPropagationTest` | 해결: baggage로 일원화(ADR-0007). gateway가 JWT로 baggage 설정, MDC → 헤더 복사 제거, `@CurrentTerminal`은 baggage에서 읽음 |
 | K-16 | ~~`remote-fields` 설정 때문에 `terminalId`가 W3C `baggage`와 별개로 `terminalId:` 헤더로도 나가, 외부 대상(VAN)에 새고 있었다(K-3은 `baggage` 헤더만 지움)~~ | `*TargetPropagationTest`(모든 헤더 출력으로 발견), `HttpHeaderPropagatorTest` | 해결: `remote-fields` 제거(ADR-0002 보완), 외부 대상·gateway 입구에서 `terminalId`/`storeId` 헤더도 제거 |
 | K-14 | 스키마를 마이그레이션 도구 없이 `infra/mysql/init/*.sql`로 관리한다. MySQL 컨테이너는 **빈 볼륨으로 처음 뜰 때만** init SQL을 실행하므로, 스키마를 바꾸면 기존 로컬 볼륨에는 반영되지 않고 적용 이력도 남지 않는다 | `docker-entrypoint-initdb.d` 동작 | 로컬: `docker compose down -v` 후 재기동. 변경은 새 번호 파일(`03-...sql`)로 추가하고 운영 반영 절차는 배포 단계(M3 이후)에서 정한다 |
+| K-17 | gateway가 단말 baggage를 붙일 때 쓰는 `BaggageManager.createBaggage(name)`와 `Baggage.set(TraceContext, value)`가 Micrometer Tracing 1.7.1에서 deprecated다. 대체 API(`createBaggageInScope`, `makeCurrent`)는 모두 scope를 여는 방식이라 금지 패턴(AGENTS 6절)에 걸린다 | `:services:api-gateway:compileKotlin` 경고 | Micrometer 다음 메이저에서 제거되면 깨진다. 업그레이드 시 scope 없이 trace context에 baggage를 붙이는 공식 방법을 다시 확인한다 |
+| K-18 | actuator(`/actuator/health/**`)가 gateway의 외부 포트(8080)에 그대로 열려 있다. 상태 값만 나오고 상세는 숨겨지지만 내부 운영 엔드포인트다 | 실제 기동 후 `curl :8080/actuator/health/readiness` | 배포 단계에서 `management.server.port` 분리 또는 메시에서 차단 |
 | K-15 | ~~공통 예외 처리기가 처리 대상을 정하지 않은 예외를 모두 500으로 바꿔서, 없는 경로(404)·지원하지 않는 메서드(405)도 500 + ERROR 로그가 됐다~~ | `GatewayE2ETest`(라우트 없는 경로), `ReactiveGlobalExceptionHandlerTest`, `GlobalExceptionHandlerTest` | 해결: WebFlux·MVC 처리기에 `NoResourceFoundException`/`NoHandlerFoundException` → 404, `MethodNotAllowedException`/`HttpRequestMethodNotSupportedException` → 405 추가. `CommonErrorCode`에 `NOT_FOUND`, `METHOD_NOT_ALLOWED` 추가(enum 상수 추가는 바이너리 호환) |
 
 ## 4. 결정됐지만 구현 전 (M3)
