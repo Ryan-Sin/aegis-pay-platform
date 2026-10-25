@@ -11,6 +11,8 @@ data class GatewayAuthProperties(
     val jwksCacheTtl: Duration = Duration.ofHours(6),
     val jwksRefreshInterval: Duration = Duration.ofMinutes(30),
     val jwksMinRefreshCooldown: Duration = Duration.ofSeconds(30),
+    val jwksWarmUpInitialBackoff: Duration = Duration.ofSeconds(1),
+    val jwksWarmUpMaxBackoff: Duration = Duration.ofSeconds(30),
     val blacklistTimeout: Duration = Duration.ofMillis(200),
     val permitAllPaths: List<String> = listOf(
         "/api/v1/auth/challenge",

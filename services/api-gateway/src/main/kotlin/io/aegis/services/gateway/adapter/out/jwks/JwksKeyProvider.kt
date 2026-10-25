@@ -18,13 +18,19 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
+import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import org.springframework.boot.context.event.ApplicationStartedEvent
+import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import java.security.interfaces.RSAPublicKey
 import java.time.Clock
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 @Component
@@ -37,6 +43,10 @@ class JwksKeyProvider(
     private val log = LoggerFactory.getLogger(javaClass)
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lastForcedRefreshAttemptMillis = AtomicLong(0L)
+    private val keysLoaded = AtomicBoolean(false)
+
+    val isKeysLoaded: Boolean
+        get() = keysLoaded.get()
 
     private val authHttpClient = asyncHttpClientFactory.create(
         HttpClientSpec(
@@ -75,6 +85,27 @@ class JwksKeyProvider(
         )
     }
 
+    @EventListener(ApplicationStartedEvent::class)
+    fun startWarmUp(): Job = refreshScope.launch { warmUp() }
+
+    suspend fun warmUp() {
+        var backoff = properties.jwksWarmUpInitialBackoff
+        var attempt = 1
+        while (true) {
+            val loaded = runCatching { localPublicKeyCache[CACHE_KEY].await() }
+                .onFailure { if (it is CancellationException) throw it }
+                .isSuccess
+            if (loaded) {
+                log.info("JWKS warm-up completed: attempt={}", attempt)
+                return
+            }
+            log.warn("JWKS warm-up failed, retrying: attempt={}, backoff={}", attempt, backoff)
+            delay(backoff.toMillis())
+            backoff = minOf(backoff.multipliedBy(2), properties.jwksWarmUpMaxBackoff)
+            attempt++
+        }
+    }
+
     private fun tryAcquireRefreshSlot(): Boolean {
         val now = clock.millis()
         val last = lastForcedRefreshAttemptMillis.get()
@@ -89,6 +120,9 @@ class JwksKeyProvider(
                 .filterIsInstance<RSAKey>()
                 .filter { !it.keyID.isNullOrBlank() }
                 .associate { rsaKey -> rsaKey.keyID to rsaKey.toRSAPublicKey() }
+                .ifEmpty { throw IllegalStateException("JWKS has no usable RSA keys") }
+        }.onSuccess {
+            keysLoaded.set(true)
         }.getOrElse { ex ->
             if (ex is CancellationException) throw ex
             log.error("Failed to fetch JWKS from auth-service", ex)

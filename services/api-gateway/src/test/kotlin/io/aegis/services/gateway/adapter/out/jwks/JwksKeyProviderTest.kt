@@ -25,6 +25,7 @@ import org.junit.jupiter.params.provider.MethodSource
 import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class JwksKeyProviderTest {
@@ -33,8 +34,10 @@ class JwksKeyProviderTest {
     private val http = FakeJwksAsyncHttpClient()
     private var provider: JwksKeyProvider? = null
 
-    private fun createProvider(): JwksKeyProvider =
-        JwksKeyProvider(GatewayAuthProperties(), http.asFactory(), clock)
+    private fun createProvider(
+        properties: GatewayAuthProperties = GatewayAuthProperties(),
+    ): JwksKeyProvider =
+        JwksKeyProvider(properties, http.asFactory(), clock)
             .also { provider = it }
 
     @AfterEach
@@ -182,6 +185,56 @@ class JwksKeyProviderTest {
         assertEquals(2, http.fetchCount)
     }
 
+    @Test
+    @DisplayName("warm-up이 끝나면 키가 적재되어 첫 요청도 auth-service를 호출하지 않는다.")
+    fun warmUpLoadsKeysBeforeFirstRequest() = runBlocking {
+        http.willReturn(toJwksJson(KEY_1))
+        val provider = createProvider()
+        assertFalse(provider.isKeysLoaded)
+
+        provider.warmUp()
+
+        assertTrue(provider.isKeysLoaded)
+        assertEquals(KEY_1.toRSAPublicKey(), provider.getPublicKey("k1"))
+        assertEquals(1, http.fetchCount)
+    }
+
+    @Test
+    @DisplayName("warm-up은 auth-service가 복구될 때까지 재시도하고, 그 전까지는 적재 전 상태다.")
+    fun warmUpRetriesUntilAuthServiceRecovers() = runBlocking {
+        http.willThrow(BusinessException(HttpClientErrorCode.EXTERNAL_API_CIRCUIT_OPEN, "auth-service"))
+        val provider = createProvider(
+            GatewayAuthProperties(
+                jwksWarmUpInitialBackoff = Duration.ofMillis(10),
+                jwksWarmUpMaxBackoff = Duration.ofMillis(20),
+            ),
+        )
+
+        val job = provider.startWarmUp()
+        withTimeout(2_000) { while (http.fetchCount < 3) delay(5) }
+        assertFalse(provider.isKeysLoaded)
+
+        http.willReturn(toJwksJson(KEY_1))
+        withTimeout(2_000) { job.join() }
+
+        assertTrue(provider.isKeysLoaded)
+        assertEquals(KEY_1.toRSAPublicKey(), provider.getPublicKey("k1"))
+    }
+
+    @Test
+    @DisplayName("한 번 적재된 뒤에는 갱신이 실패해도 적재 상태를 유지한다(readiness가 auth-service 장애를 따라 흔들리지 않게).")
+    fun staysLoadedWhenLaterRefreshFails() = runBlocking {
+        http.willReturn(toJwksJson(KEY_1))
+        val provider = createProvider()
+        provider.warmUp()
+
+        http.willThrow(BusinessException(HttpClientErrorCode.EXTERNAL_API_TIMEOUT, "auth-service", JwksKeyProvider.JWKS_URI))
+        assertFailsWith<BusinessException> { provider.getPublicKey("forged") }
+
+        assertTrue(provider.isKeysLoaded)
+        assertEquals(2, http.fetchCount)
+    }
+
     companion object {
         @JvmStatic
         fun initialLoadFailures(): List<Named<(FakeJwksAsyncHttpClient) -> Unit>> = listOf(
@@ -189,6 +242,7 @@ class JwksKeyProviderTest {
             Named.of("circuit open") { it.willThrow(BusinessException(HttpClientErrorCode.EXTERNAL_API_CIRCUIT_OPEN, "auth-service")) },
             Named.of("HTML 응답") { it.willReturn("<html>502 Bad Gateway</html>") },
             Named.of("빈 응답") { it.willReturn("") },
+            Named.of("키 없는 JWKS") { it.willReturn("""{"keys":[]}""") },
         )
     }
 }
