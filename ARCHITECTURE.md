@@ -51,7 +51,7 @@
    - **Body**: `orderId`, `amount`, `vat`, `emvCryptogram`
 2. `api-gateway`의 보안 검문과 헤더 변환(Netty, Non-blocking):
    - **Body 불간섭**: Gateway는 Body를 역직렬화하지 않는다(스트림 소비와 OOM 방지).
-   - **Header Sanitizer**: 외부에서 들어온 `X-Terminal-*`, `X-Store-*` 헤더와 `baggage` 헤더를 제거한다.
+   - **Header Sanitizer**: 외부에서 들어온 `X-Terminal-*`, `X-Store-*` 헤더와 `baggage`, `terminalId`, `storeId` 헤더를 제거한다.
    - **Local JWKS Verification**: Caffeine 캐시에 보관된 JWKS 키셋으로 서명을 검증한다. 캐시는 `refreshAfterWrite`로 백그라운드 갱신하고(실패 시 기존 키 유지), 모르는 `kid`가 오면 cooldown 내 1회만 강제 갱신한다(ADR-0003).
    - **Blacklist 확인**: Redis 조회 실패 시 fail-closed(503).
    - **Context Injection**: 검증된 JWT 클레임으로 단말 컨텍스트 baggage(`terminalId`, `storeId`)를 설정하고, 권한 정보는 `X-Terminal-Scopes` 헤더로 첫 서비스에만 전달해서 `payment-ledger-service`로 라우팅한다(ADR-0007).
@@ -81,7 +81,7 @@
   - 망취소 같은 비즈니스 fallback 정책은 공통 모듈에 넣지 않고 호출 측에 위임한다.
 - **`platform-observability-starter`**: Spring Boot 4 `spring-boot-starter-opentelemetry` 기반 트레이싱·OTLP 연동.
   - Request ID: 헤더 + MDC(`Slf4jThreadLocalAccessor`)로 전파한다(ADR-0002).
-  - 단말 컨텍스트: baggage 하나로 전파한다(ADR-0007). `management.tracing.baggage.remote-fields`/`correlation.fields` 설정으로 선언하고 starter 기본값으로 제공한다. 필터에서 OTel scope를 직접 다루지 않는다.
+  - 단말 컨텍스트: baggage 하나로 전파한다(ADR-0007). W3C `baggage` 헤더 하나만 쓰고 `remote-fields`는 쓰지 않는다(필드 이름 헤더가 따로 나가 외부로 샌다, K-16). 로그 MDC 반영(`correlation.fields`)은 starter 기본값으로 제공한다. 필터에서 OTel scope를 직접 다루지 않는다.
 - (계획) **메트릭 공통 규약**, **Messaging(Kafka + Outbox + 멱등 컨슈머) 라이브러리**, **Feature Flag SDK**: `docs/CURRICULUM.md` 참고.
 
 ### B. 서비스 (`services/`, `bootJar = true`, `jar = false`)

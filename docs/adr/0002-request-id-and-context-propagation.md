@@ -16,6 +16,7 @@
    - accessor 등록과 `Hooks.enableAutomaticContextPropagation()`은 auto-configuration에서 한 번만 한다.
 2. **단말 컨텍스트(`terminalId`, `storeId`) = OTel baggage, 설정 기반**
    - `management.tracing.baggage.remote-fields`와 `correlation.fields`로 선언한다. 필터에서 scope를 직접 다루지 않는다.
+   - **2026-10-25 보완(ADR-0007)**: `remote-fields`는 쓰지 않는다. 필드 이름 그대로의 헤더가 별도로 나가 외부로 새는 것을 확인했다(K-16). W3C `baggage` 헤더만 쓰고, `correlation.fields`는 observability starter 기본값으로 둔다.
    - baggage는 api-gateway만 JWT 검증 결과로 설정하고, 외부 유입 `baggage` 헤더는 제거한다.
 3. trace_id·span_id는 OTel과 Micrometer Tracing이 자동 처리한다.
 

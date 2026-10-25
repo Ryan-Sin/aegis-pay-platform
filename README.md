@@ -27,7 +27,7 @@ aegis-pay-platform/
 │   ├── platform-http-client-starter       # ✅ SyncHttpClient / AsyncHttpClient, Resilience4j, 에러 번역
 │   └── platform-observability-starter     # ✅ OpenTelemetry 연동(Boot 4 starter), Request ID 헤더·MDC 전파
 ├── services/                              # 서비스 (bootJar = true, jar = false)
-│   ├── api-gateway                        # 🚧 Spring Cloud Gateway, Header Sanitizer, JWKS 캐시 JWT 검증, Blacklist, 외부 baggage 차단
+│   ├── api-gateway                        # 🚧 Spring Cloud Gateway, Header Sanitizer, JWKS 캐시 JWT 검증, Blacklist, 외부 baggage 차단, 단말 컨텍스트 baggage 전달
 │   ├── auth-service                       # 🚧 단말 challenge 인증·토큰 발급, KMS 서명(RS256), JWKS / 📋 단말 등록 API, 서명키 로테이션
 │   ├── payment-ledger-service             # 📋 멱등성, 락-트랜잭션 분리, 망취소, Transactional Outbox
 │   └── realtime-broker-service            # 📋 Kafka 멱등 컨슈머, SSE 연결 관리

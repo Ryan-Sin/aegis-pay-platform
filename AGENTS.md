@@ -61,6 +61,8 @@
 | 필터나 커스텀 `ThreadLocalAccessor`에서 `BaggageManager.createBaggageInScope`로 OTel scope를 직접 열고 닫기 | OTel Context scope는 같은 스레드에서 LIFO로 닫혀야 한다. Micrometer의 `ObservationThreadLocalAccessor`와 충돌해 컨텍스트가 오염된다 | baggage는 `management.tracing.baggage.*` 설정으로 선언적으로 쓴다(ADR-0002) |
 | WebFlux 필터에서 `MDC.put` 직접 호출 | Netty event loop 스레드에 값이 남아 다른 요청으로 새어 나간다 | `Slf4jThreadLocalAccessor` + `contextWrite`(ADR-0002) |
 | `ContextRegistry`에 accessor를 빈 생성자나 `init`에서 등록 | 전역 레지스트리라서 중복 등록·교체가 생긴다 | auto-configuration에서 한 번만 등록 |
+| `management.tracing.baggage.remote-fields` 사용 | 필드가 W3C `baggage`와 별개로 `terminalId:` 같은 개별 헤더로도 나가서 외부 대상 차단을 우회한다(K-16) | W3C `baggage` 헤더만 쓴다. MDC 반영은 `correlation.fields` |
+| gateway에서 하위 요청에 `baggage` 헤더를 직접 써서 단말 컨텍스트 전달 | SCG가 하위로 보내기 직전에 propagation 헤더를 지우고 trace context에서 다시 주입해서 사라진다 | 서버 trace context에 `Baggage.set(traceContext, value)`로 붙인다(scope를 열지 않음, ADR-0007) |
 | 리액티브 체인 조립 시점에 `tracer.currentSpan()` 호출 | observation은 Reactor Context에 있어 조립 시점에는 null이다 | `Mono.deferContextual` + `ContextSnapshotFactory` |
 | 클라이언트가 보낸 ID/헤더 값을 검증 없이 MDC·로그·응답에 사용 | 로그 인젝션, 카디널리티 폭증 | 형식·길이를 검증하고, 실패하면 새로 생성 |
 | 에러 응답에 내부 원인(reason, kid, jti, 인프라명) 노출 | 공격자에게 검증 단계 정보를 준다 | `detail`에 담아 로그에만 남긴다 |
