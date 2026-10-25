@@ -1,0 +1,6 @@
+aegis:
+  auth:
+    kms:
+      endpoint: ${KMS_ENDPOINT:http://localhost:4566}
+      access-key-id: test
+      secret-access-key: test

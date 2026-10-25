@@ -1,0 +1,41 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: auth-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3307}/aegis_auth
+    username: ${MYSQL_USERNAME:aegis}
+    password: ${MYSQL_PASSWORD:aegis_password}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: ${OTLP_METRICS_EXPORT_ENABLED:false}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+
+aegis:
+  auth:
+    token:
+      issuer: ${JWT_ISSUER:aegis-auth-service}
+      audience: ${JWT_AUDIENCE:aegis-api}
+      ttl: 12h
+      challenge-ttl: 60s
+    signing:
+      signing-key: ${JWT_SIGNING_KEY:alias/aegis-jwt-signing}
+    kms:
+      region: ${AWS_REGION:ap-northeast-2}
