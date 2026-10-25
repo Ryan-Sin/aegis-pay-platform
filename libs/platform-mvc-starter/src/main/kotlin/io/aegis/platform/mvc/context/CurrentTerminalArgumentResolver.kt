@@ -3,15 +3,17 @@ package io.aegis.platform.mvc.context
 import io.aegis.platform.core.context.TerminalContext
 import io.aegis.platform.core.exception.BusinessException
 import io.aegis.platform.core.exception.CommonErrorCode
-import jakarta.servlet.http.HttpServletRequest
+import io.micrometer.tracing.BaggageManager
 import org.springframework.core.MethodParameter
-import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.support.WebDataBinderFactory
 import org.springframework.web.context.request.NativeWebRequest
 import org.springframework.web.method.support.HandlerMethodArgumentResolver
 import org.springframework.web.method.support.ModelAndViewContainer
 
-class CurrentTerminalArgumentResolver : HandlerMethodArgumentResolver {
+class CurrentTerminalArgumentResolver(
+    private val baggageManager: BaggageManager?,
+) : HandlerMethodArgumentResolver {
+
     override fun supportsParameter(parameter: MethodParameter): Boolean {
         return parameter.hasParameterAnnotation(CurrentTerminal::class.java) &&
                 parameter.parameterType == TerminalContext::class.java
@@ -24,27 +26,23 @@ class CurrentTerminalArgumentResolver : HandlerMethodArgumentResolver {
         binderFactory: WebDataBinderFactory?
     ): Any? {
         val annotation = parameter.getParameterAnnotation(CurrentTerminal::class.java)!!
-        val request = webRequest.getNativeRequest(HttpServletRequest::class.java)
-            ?: throw BusinessException(CommonErrorCode.SERVLET_REQUEST_NOT_FOUND)
 
-        val terminalId = request.getHeader(TerminalContext.HEADER_TERMINAL_ID)?.takeIf { it.isNotBlank() }
-        val storeId = request.getHeader(TerminalContext.HEADER_STORE_ID)?.takeIf { it.isNotBlank() }
+        val terminalId = baggageValue(TerminalContext.BAGGAGE_TERMINAL_ID)
+        val storeId = baggageValue(TerminalContext.BAGGAGE_STORE_ID)
 
-        if(terminalId == null && storeId == null && !annotation.required) {
+        if (terminalId == null && storeId == null && !annotation.required) {
             return null
         }
 
         if (terminalId == null || storeId == null) {
-            val missingHeader = if (terminalId == null) {
-                TerminalContext.HEADER_TERMINAL_ID
-            } else {
-                TerminalContext.HEADER_STORE_ID
-            }
-            throw MissingRequestHeaderException(missingHeader, parameter)
+            throw BusinessException(
+                CommonErrorCode.MISSING_TERMINAL_CONTEXT,
+                detail = "terminal baggage missing (terminalId=${terminalId != null}, storeId=${storeId != null}, " +
+                    "tracing=${baggageManager != null})",
+            )
         }
 
-        val scopesHeader = request.getHeader(TerminalContext.HEADER_TERMINAL_SCOPES).orEmpty()
-        val scopes = scopesHeader
+        val scopes = webRequest.getHeader(TerminalContext.HEADER_TERMINAL_SCOPES).orEmpty()
             .split(',')
             .map(String::trim)
             .filter(String::isNotEmpty)
@@ -56,4 +54,7 @@ class CurrentTerminalArgumentResolver : HandlerMethodArgumentResolver {
             scopes = scopes
         )
     }
+
+    private fun baggageValue(name: String): String? =
+        baggageManager?.getBaggage(name)?.get()?.takeIf { it.isNotBlank() }
 }

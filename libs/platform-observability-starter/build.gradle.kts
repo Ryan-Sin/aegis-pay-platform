@@ -8,6 +8,7 @@ dependencies {
     // Boot 4: Tracer/OTel SDK/OTLP exporter auto-configuration을 함께 가져온다(K-1).
     api("org.springframework.boot:spring-boot-starter-opentelemetry")
     api("io.micrometer:context-propagation")
+    implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.springframework.boot:spring-boot-starter-aspectj")
 
     compileOnly("org.springframework.boot:spring-boot-starter-web")

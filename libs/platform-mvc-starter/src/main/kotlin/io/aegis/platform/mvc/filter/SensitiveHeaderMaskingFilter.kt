@@ -1,6 +1,5 @@
 package io.aegis.platform.mvc.filter
 
-import io.aegis.platform.core.context.TerminalContext
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -18,13 +17,11 @@ class SensitiveHeaderMaskingFilter : OncePerRequestFilter() {
     ) {
         val authHeader = request.getHeader(HttpHeaders.AUTHORIZATION)
         val maskedAuth = if (authHeader.isNullOrBlank()) "NONE" else "[MASKED]"
-        val terminalId = request.getHeader(TerminalContext.HEADER_TERMINAL_ID) ?: "ANONYMOUS"
 
         log.debug(
-            "Incoming Request: method={}, uri={}, terminalId={}, authorization={}",
+            "Incoming Request: method={}, uri={}, authorization={}",
             request.method,
             request.requestURI,
-            terminalId,
             maskedAuth,
         )
 

@@ -2,7 +2,6 @@ package io.aegis.platform.mvc.filter
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
-import io.aegis.platform.core.context.TerminalContext
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import org.junit.jupiter.api.BeforeEach
@@ -36,7 +35,6 @@ class SensitiveHeaderMaskingFilterTest {
         val rawToken = "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.secret"
         val request = MockHttpServletRequest("POST", "/api/v1/payments").apply {
             addHeader(HttpHeaders.AUTHORIZATION, rawToken)
-            addHeader(TerminalContext.HEADER_TERMINAL_ID, "T-001")
         }
         val response = MockHttpServletResponse()
 
@@ -49,12 +47,11 @@ class SensitiveHeaderMaskingFilterTest {
 
         assertEquals(rawToken, downstreamAuthHeader)
         assertFalse(output.out.contains(rawToken))
-        assertTrue(output.out.contains("terminalId=T-001"))
         assertTrue(output.out.contains("authorization=[MASKED]"))
     }
 
     @Test
-    @DisplayName("Authorization이 공백이고 Terminal-Id가 없으면 로그에 NONE과 ANONYMOUS로 기록한다")
+    @DisplayName("Authorization이 공백이면 로그에 NONE으로 기록한다")
     fun logsNoneAndAnonymousWhenHeadersAreBlankOrAbsent(output: CapturedOutput) {
         val request = MockHttpServletRequest("GET", "/api/v1/health").apply {
             addHeader(HttpHeaders.AUTHORIZATION, "   ")
@@ -67,7 +64,6 @@ class SensitiveHeaderMaskingFilterTest {
         }
 
         assertTrue(chainInvoked)
-        assertTrue(output.out.contains("terminalId=ANONYMOUS"))
         assertTrue(output.out.contains("authorization=NONE"))
     }
 }
