@@ -3,10 +3,12 @@ package io.aegis.services.gateway
 import com.sun.net.httpserver.Headers
 import com.sun.net.httpserver.HttpServer
 import io.aegis.platform.core.context.TerminalContext
+import io.aegis.platform.core.exception.CommonErrorCode
+import io.aegis.platform.core.exception.ErrorCode
 import io.aegis.platform.httpclient.AsyncHttpClientFactory
 import io.aegis.platform.observability.TraceContextConstants
-import io.aegis.services.gateway.exception.GatewayErrorCode
-import io.aegis.services.gateway.exception.GatewayErrorMessage
+import io.aegis.services.gateway.application.exception.GatewayErrorCode
+import io.aegis.services.gateway.application.exception.GatewayErrorMessage
 import io.aegis.services.gateway.support.FakeJwksAsyncHttpClient
 import io.aegis.services.gateway.support.JwtTestFixtures.KEY_1
 import io.aegis.services.gateway.support.JwtTestFixtures.createHs256Token
@@ -91,6 +93,13 @@ class GatewayE2ETest {
     }
 
     @Test
+    @DisplayName("challenge 발급 경로는 토큰 없이 auth-service로 전달된다.")
+    fun permitsChallengePathWithoutToken() {
+        client.post().uri("/api/v1/auth/challenge").exchange().expectStatus().isOk
+        assertNotNull(downstreamRequestHeaders.get())
+    }
+
+    @Test
     @DisplayName("permit-all 경로는 토큰 없이 통과하지만 위조 헤더는 여전히 제거된다.")
     fun stripsSpoofedHeadersOnPermitAllPath() {
         client.post().uri("/api/v1/auth/token")
@@ -108,6 +117,25 @@ class GatewayE2ETest {
     @DisplayName("permit-all이 아닌 /api/v1/auth/** 경로(logout 등)는 토큰이 필요하다.")
     fun requiresTokenOnNonPermitAllAuthPath() {
         expectError(client.post().uri("/api/v1/auth/logout").exchange(), GatewayErrorCode.MISSING_AUTH_TOKEN)
+        assertNull(downstreamRequestHeaders.get())
+    }
+
+    @Test
+    @DisplayName("내부 전용 경로(JWKS)는 유효한 토큰이 있어도 404로 막고 하위 서비스로 보내지 않는다.")
+    fun blocksInternalOnlyPathFromOutside() {
+        expectError(client.get().uri("/api/v1/auth/jwks").exchange(), CommonErrorCode.NOT_FOUND)
+        expectError(
+            client.get().uri("/api/v1/auth/jwks").header(HttpHeaders.AUTHORIZATION, "Bearer ${validToken()}").exchange(),
+            CommonErrorCode.NOT_FOUND,
+        )
+        assertNull(downstreamRequestHeaders.get())
+    }
+
+    @Test
+    @DisplayName("라우트가 없는 경로(예전 JWKS 경로 포함)는 500이 아니라 404 NOT_FOUND다.")
+    fun returnsNotFoundForUnroutedPath() {
+        expectError(client.get().uri("/.well-known/jwks.json").exchange(), CommonErrorCode.NOT_FOUND)
+        expectError(client.get().uri("/no-such-path").exchange(), CommonErrorCode.NOT_FOUND)
         assertNull(downstreamRequestHeaders.get())
     }
 
@@ -226,7 +254,7 @@ class GatewayE2ETest {
 
     private fun expectError(
         response: WebTestClient.ResponseSpec,
-        errorCode: GatewayErrorCode,
+        errorCode: ErrorCode,
     ): String {
         val result = response
             .expectStatus().isEqualTo(errorCode.status)

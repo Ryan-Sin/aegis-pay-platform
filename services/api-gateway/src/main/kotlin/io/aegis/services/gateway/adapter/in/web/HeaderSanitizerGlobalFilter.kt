@@ -1,4 +1,4 @@
-package io.aegis.services.gateway.filter
+package io.aegis.services.gateway.adapter.`in`.web
 
 import org.slf4j.LoggerFactory
 import org.springframework.cloud.gateway.filter.GatewayFilterChain

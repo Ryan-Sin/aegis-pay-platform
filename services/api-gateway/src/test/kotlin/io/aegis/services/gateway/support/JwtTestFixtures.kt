@@ -18,6 +18,8 @@ import java.util.Date
 object JwtTestFixtures {
 
     val FIXED_NOW: Instant = Instant.parse("2026-01-01T00:00:00.00Z")
+    const val ISSUER = "aegis-auth-service"
+    const val AUDIENCE = "aegis-api"
 
     val KEY_1: RSAKey by lazy { generateRsaKey("k1") }
     val KEY_2: RSAKey by lazy { generateRsaKey("k2") }
@@ -36,11 +38,13 @@ object JwtTestFixtures {
         jti: String? = "jti-001",
         expirationTime: Instant? = FIXED_NOW.plus(Duration.ofMinutes(10)),
         scopes: Any? = listOf("payment:write", "payment:read"),
+        issuer: String? = ISSUER,
+        audience: String? = AUDIENCE,
     ): String {
         val headerBuilder = JWSHeader.Builder(JWSAlgorithm.RS256)
         if (kid != null) headerBuilder.keyID(kid)
 
-        val claims = buildClaims(subject, storeId, jti, expirationTime, scopes)
+        val claims = buildClaims(subject, storeId, jti, expirationTime, scopes, issuer, audience)
         return SignedJWT(headerBuilder.build(), claims).apply {
             sign(RSASSASigner(signingKey))
         }.serialize()
@@ -52,7 +56,7 @@ object JwtTestFixtures {
         expirationTime: Instant = FIXED_NOW.plus(Duration.ofMinutes(10)),
     ): String {
         val header = JWSHeader.Builder(JWSAlgorithm.HS256).keyID(kid).build()
-        val claims = buildClaims("TERM-001", "STORE-001", "jti-001", expirationTime, null)
+        val claims = buildClaims("TERM-001", "STORE-001", "jti-001", expirationTime, null, ISSUER, AUDIENCE)
         return SignedJWT(header, claims).apply { sign(MACSigner(secret)) }.serialize()
     }
 
@@ -61,9 +65,13 @@ object JwtTestFixtures {
         storeId: String?,
         jti: String?,
         expirationTime: Instant?,
-        scopes: Any?
+        scopes: Any?,
+        issuer: String?,
+        audience: String?,
     ): JWTClaimsSet {
         val builder = JWTClaimsSet.Builder()
+        if (issuer != null) builder.issuer(issuer)
+        if (audience != null) builder.audience(audience)
         if (subject != null) builder.subject(subject)
         if (storeId != null) builder.claim(TerminalContext.CLAIM_STORE_ID, storeId)
         if (jti != null) builder.jwtID(jti)

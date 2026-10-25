@@ -1,4 +1,4 @@
-package io.aegis.services.gateway.security
+package io.aegis.services.gateway.application.service
 
 import com.nimbusds.jose.JOSEObjectType
 import com.nimbusds.jose.PlainHeader
@@ -6,9 +6,10 @@ import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.PlainJWT
 import io.aegis.platform.core.context.TerminalContext
 import io.aegis.platform.core.exception.BusinessException
+import io.aegis.services.gateway.adapter.out.jwks.JwksKeyProvider
+import io.aegis.services.gateway.application.exception.GatewayErrorCode
+import io.aegis.services.gateway.application.exception.GatewayErrorMessage
 import io.aegis.services.gateway.config.GatewayAuthProperties
-import io.aegis.services.gateway.exception.GatewayErrorCode
-import io.aegis.services.gateway.exception.GatewayErrorMessage
 import io.aegis.services.gateway.support.FakeJwksAsyncHttpClient
 import io.aegis.services.gateway.support.JwtTestFixtures.FIXED_NOW
 import io.aegis.services.gateway.support.JwtTestFixtures.KEY_1
@@ -36,7 +37,7 @@ class JwtTokenVerifierTest {
     private val clock = MutableClock()
     private val http = FakeJwksAsyncHttpClient().apply { willReturn(toJwksJson(KEY_1)) }
     private val jwksKeyProvider = JwksKeyProvider(GatewayAuthProperties(), http.asFactory(), clock)
-    private val verifier = JwtTokenVerifier(jwksKeyProvider, clock)
+    private val verifier = JwtTokenVerifier(jwksKeyProvider, GatewayAuthProperties(), clock)
 
     @AfterEach
     fun tearDown() {
@@ -178,6 +179,20 @@ class JwtTokenVerifierTest {
     fun rejectsInvalidStoreId() = runBlocking {
         assertInvalid(GatewayErrorMessage.REASON_MISSING_STORE_ID_CLAIM) { verifier.verify(createRs256Token(KEY_1, storeId = null)) }
         assertInvalid(GatewayErrorMessage.REASON_MISSING_STORE_ID_CLAIM) { verifier.verify(createRs256Token(KEY_1, storeId = " ")) }
+    }
+
+    @Test
+    @DisplayName("iss가 없거나 auth-service 발급자가 아니면 거부한다(다른 시스템이 같은 키로 발급한 토큰 차단).")
+    fun rejectsMissingOrForeignIssuer() = runBlocking {
+        assertInvalid(GatewayErrorMessage.REASON_INVALID_ISSUER) { verifier.verify(createRs256Token(KEY_1, issuer = null)) }
+        assertInvalid(GatewayErrorMessage.REASON_INVALID_ISSUER) { verifier.verify(createRs256Token(KEY_1, issuer = "other-issuer")) }
+    }
+
+    @Test
+    @DisplayName("aud가 없거나 이 API용이 아니면 거부한다(다른 서비스용 토큰 재사용 차단).")
+    fun rejectsMissingOrForeignAudience() = runBlocking {
+        assertInvalid(GatewayErrorMessage.REASON_INVALID_AUDIENCE) { verifier.verify(createRs256Token(KEY_1, audience = null)) }
+        assertInvalid(GatewayErrorMessage.REASON_INVALID_AUDIENCE) { verifier.verify(createRs256Token(KEY_1, audience = "admin-api")) }
     }
 
     @Test

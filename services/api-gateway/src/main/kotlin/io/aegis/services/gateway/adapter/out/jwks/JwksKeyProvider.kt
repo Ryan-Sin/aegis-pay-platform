@@ -1,4 +1,4 @@
-package io.aegis.services.gateway.security
+package io.aegis.services.gateway.adapter.out.jwks
 
 import com.github.benmanes.caffeine.cache.AsyncLoadingCache
 import com.github.benmanes.caffeine.cache.Caffeine
@@ -9,9 +9,10 @@ import io.aegis.platform.httpclient.AsyncHttpClientFactory
 import io.aegis.platform.httpclient.config.HttpClientSpec
 import io.aegis.platform.httpclient.config.HttpTarget
 import io.aegis.platform.httpclient.get
+import io.aegis.services.gateway.application.exception.GatewayErrorCode
+import io.aegis.services.gateway.application.exception.GatewayErrorMessage
+import io.aegis.services.gateway.application.port.out.LoadJwtPublicKeyPort
 import io.aegis.services.gateway.config.GatewayAuthProperties
-import io.aegis.services.gateway.exception.GatewayErrorCode
-import io.aegis.services.gateway.exception.GatewayErrorMessage
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -31,7 +32,7 @@ class JwksKeyProvider(
     private val properties: GatewayAuthProperties,
     asyncHttpClientFactory: AsyncHttpClientFactory,
     private val clock: Clock,
-) {
+) : LoadJwtPublicKeyPort {
 
     private val log = LoggerFactory.getLogger(javaClass)
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -53,7 +54,7 @@ class JwksKeyProvider(
             refreshScope.future { fetchPublicKeys() }
         }
 
-    suspend fun getPublicKey(kid: String): RSAPublicKey {
+    override suspend fun getPublicKey(kid: String): RSAPublicKey {
         val publicKeys = localPublicKeyCache[CACHE_KEY].await()
         publicKeys[kid]?.let { return it }
 
@@ -101,7 +102,7 @@ class JwksKeyProvider(
     }
 
     companion object {
-        const val JWKS_URI = "/.well-known/jwks.json"
+        const val JWKS_URI = "/api/v1/auth/jwks"
         private const val AUTH_SERVICE_TARGET_NAME = "auth-service"
         private const val CACHE_KEY = "JWKS"
     }

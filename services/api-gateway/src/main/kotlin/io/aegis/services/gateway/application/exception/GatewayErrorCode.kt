@@ -1,4 +1,4 @@
-package io.aegis.services.gateway.exception
+package io.aegis.services.gateway.application.exception
 
 import io.aegis.platform.core.exception.ErrorCode
 import org.springframework.http.HttpStatus

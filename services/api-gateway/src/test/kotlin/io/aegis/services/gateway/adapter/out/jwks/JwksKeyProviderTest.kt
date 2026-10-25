@@ -1,9 +1,9 @@
-package io.aegis.services.gateway.security
+package io.aegis.services.gateway.adapter.out.jwks
 
 import io.aegis.platform.core.exception.BusinessException
 import io.aegis.platform.httpclient.exception.HttpClientErrorCode
+import io.aegis.services.gateway.application.exception.GatewayErrorCode
 import io.aegis.services.gateway.config.GatewayAuthProperties
-import io.aegis.services.gateway.exception.GatewayErrorCode
 import io.aegis.services.gateway.support.FakeJwksAsyncHttpClient
 import io.aegis.services.gateway.support.JwtTestFixtures.KEY_1
 import io.aegis.services.gateway.support.JwtTestFixtures.KEY_2

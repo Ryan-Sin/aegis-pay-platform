@@ -1,12 +1,11 @@
-package io.aegis.services.gateway.filter
+package io.aegis.services.gateway.adapter.`in`.web
 
 import io.aegis.platform.core.context.TerminalContext
 import io.aegis.platform.core.exception.BusinessException
+import io.aegis.services.gateway.application.exception.GatewayErrorCode
+import io.aegis.services.gateway.application.exception.GatewayErrorMessage
+import io.aegis.services.gateway.application.port.`in`.AuthenticateTokenUseCase
 import io.aegis.services.gateway.config.GatewayAuthProperties
-import io.aegis.services.gateway.exception.GatewayErrorCode
-import io.aegis.services.gateway.exception.GatewayErrorMessage
-import io.aegis.services.gateway.security.JwtTokenVerifier
-import io.aegis.services.gateway.security.TokenBlacklistChecker
 import kotlinx.coroutines.reactor.mono
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
 import org.springframework.cloud.gateway.filter.GlobalFilter
@@ -22,8 +21,7 @@ import reactor.core.publisher.Mono
 @Component
 class JwtAuthenticationGlobalFilter(
     properties: GatewayAuthProperties,
-    private val jwtTokenVerifier: JwtTokenVerifier,
-    private val tokenBlacklistChecker: TokenBlacklistChecker,
+    private val authenticateTokenUseCase: AuthenticateTokenUseCase,
 ) : GlobalFilter, Ordered {
 
     private val permitAllPatterns = properties.permitAllPaths.map { pattern ->
@@ -49,8 +47,7 @@ class JwtAuthenticationGlobalFilter(
                     GatewayErrorCode.MISSING_AUTH_TOKEN,
                     detail = GatewayErrorMessage.REASON_MISSING_BEARER_TOKEN,
                 )
-            val claims = jwtTokenVerifier.verify(token)
-            tokenBlacklistChecker.verifyNotBlacklisted(claims)
+            val claims = authenticateTokenUseCase.authenticate(token)
             injectTerminalHeaders(exchange, claims.terminalContext)
         }.flatMap { authenticatedExchange ->
             chain.filter(authenticatedExchange)

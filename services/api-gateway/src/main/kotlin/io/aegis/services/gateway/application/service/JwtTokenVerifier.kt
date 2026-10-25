@@ -1,4 +1,4 @@
-package io.aegis.services.gateway.security
+package io.aegis.services.gateway.application.service
 
 import com.nimbusds.jose.JWSAlgorithm
 import com.nimbusds.jose.crypto.RSASSAVerifier
@@ -6,17 +6,21 @@ import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.SignedJWT
 import io.aegis.platform.core.context.TerminalContext
 import io.aegis.platform.core.exception.BusinessException
-import io.aegis.services.gateway.exception.GatewayErrorCode
-import io.aegis.services.gateway.exception.GatewayErrorMessage
-import org.springframework.stereotype.Component
+import io.aegis.services.gateway.application.exception.GatewayErrorCode
+import io.aegis.services.gateway.application.exception.GatewayErrorMessage
+import io.aegis.services.gateway.application.port.out.LoadJwtPublicKeyPort
+import io.aegis.services.gateway.config.GatewayAuthProperties
+import io.aegis.services.gateway.domain.VerifiedJwtClaims
+import org.springframework.stereotype.Service
 import java.security.interfaces.RSAPublicKey
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 
-@Component
+@Service
 class JwtTokenVerifier(
-    private val jwksKeyProvider: JwksKeyProvider,
+    private val loadJwtPublicKeyPort: LoadJwtPublicKeyPort,
+    private val properties: GatewayAuthProperties,
     private val clock: Clock,
 ) {
 
@@ -33,7 +37,7 @@ class JwtTokenVerifier(
         val kid = signedJwt.header.keyID?.takeIf { it.isNotBlank() }
             ?: rejectInvalidToken(GatewayErrorMessage.REASON_MISSING_KID_HEADER)
 
-        val publicKey = jwksKeyProvider.getPublicKey(kid)
+        val publicKey = loadJwtPublicKeyPort.getPublicKey(kid)
         return verifySignatureAndExtractClaims(signedJwt, publicKey)
     }
 
@@ -61,6 +65,14 @@ class JwtTokenVerifier(
                 GatewayErrorCode.EXPIRED_AUTH_TOKEN,
                 detail = GatewayErrorMessage.REASON_TOKEN_EXPIRED,
             )
+        }
+
+        if (claims.issuer != properties.issuer) {
+            rejectInvalidToken(GatewayErrorMessage.REASON_INVALID_ISSUER)
+        }
+
+        if (claims.audience.orEmpty().none { it == properties.audience }) {
+            rejectInvalidToken(GatewayErrorMessage.REASON_INVALID_AUDIENCE)
         }
 
         val terminalId = claims.subject?.takeIf { it.isNotBlank() }

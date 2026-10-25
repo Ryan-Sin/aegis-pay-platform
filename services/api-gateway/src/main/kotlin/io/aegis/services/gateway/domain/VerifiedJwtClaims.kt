@@ -1,4 +1,4 @@
-package io.aegis.services.gateway.security
+package io.aegis.services.gateway.domain
 
 import io.aegis.platform.core.context.TerminalContext
 

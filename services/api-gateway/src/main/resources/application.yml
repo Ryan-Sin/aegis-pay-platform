@@ -17,7 +17,7 @@ spring:
             - id: auth-service
               uri: ${AUTH_SERVICE_URL:http://localhost:8081}
               predicates:
-                - Path=/api/v1/auth/**, /.well-known/**
+                - Path=/api/v1/auth/**
             - id: payment-ledger-service
               uri: ${PAYMENT_LEDGER_SERVICE_URL:http://localhost:8082}
               predicates:
@@ -31,13 +31,17 @@ aegis:
   gateway:
     auth:
       auth-service-base-url: ${AUTH_SERVICE_URL:http://localhost:8081}
+      issuer: ${JWT_ISSUER:aegis-auth-service}
+      audience: ${JWT_AUDIENCE:aegis-api}
       jwks-cache-ttl: 6h
       jwks-refresh-interval: 30m
       jwks-min-refresh-cooldown: 30s
       blacklist-timeout: 200ms
       permit-all-paths:
+        - /api/v1/auth/challenge
         - /api/v1/auth/token
-        - /.well-known/jwks.json
+      blocked-paths:
+        - /api/v1/auth/jwks
 
 management:
   # Trace export는 management.opentelemetry.tracing.export.otlp.endpoint를 지정해야 켜진다(지정 전에는 span을 내보내지 않음).

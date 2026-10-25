@@ -1,4 +1,4 @@
-package io.aegis.services.gateway.tracing
+package io.aegis.services.gateway.adapter.`in`.tracing
 
 import io.opentelemetry.context.propagation.TextMapPropagator
 import org.springframework.beans.factory.config.BeanPostProcessor
