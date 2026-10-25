@@ -1,25 +1,23 @@
 services:
-  postgres:
-    image: postgres:17-alpine
+  mysql:
+    image: mysql:8.4
     ports:
-      - "5432:5432"
+      # 호스트 3306은 다른 MySQL과 겹치기 쉬워서 3307을 기본으로 쓴다.
+      - "${AEGIS_MYSQL_PORT:-3307}:3306"
     environment:
-      POSTGRES_DB: aegis_pay
-      POSTGRES_USER: aegis
-      POSTGRES_PASSWORD: aegis_password
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_USER: aegis
+      MYSQL_PASSWORD: aegis_password
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+      - ./infra/mysql/init:/docker-entrypoint-initdb.d:ro
     networks:
       - aegis-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aegis -d aegis_pay"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u aegis -paegis_password --silent"]
       interval: 5s
       timeout: 5s
-      retries: 5
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
+      retries: 20
 
   valkey:
     image: valkey/valkey:8.0-alpine
@@ -35,10 +33,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
 
   kafka:
     image: apache/kafka:3.9.0
@@ -58,16 +52,29 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     networks:
       - aegis-net
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
+
+  # JWT 서명키용 KMS(ADR-0006). 2026.03.0부터 auth token이 필요해서 토큰 없이 동작하는 마지막 4.x로 고정한다.
+  # 키는 ready.d 스크립트가 기동 때마다 만든다(무료 버전은 상태를 저장하지 않으므로 재기동하면 키 material이 바뀐다).
+  localstack:
+    image: localstack/localstack:4.14.0
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: kms
+    volumes:
+      - ./infra/localstack/init/ready.d:/etc/localstack/init/ready.d:ro
+    networks:
+      - aegis-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s localhost:4566/_localstack/init/ready | grep -q '\"completed\": *true'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
 networks:
   aegis-net:
-    driver: overlay
-    attachable: true
+    driver: bridge
 
 volumes:
-  postgres_data:
+  mysql_data:
   valkey_data:
