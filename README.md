@@ -50,8 +50,9 @@ aegis-pay-platform/
 ### Tier 1: Docker Compose
 
 ```bash
-# 코어 인프라 실행 (현재: PostgreSQL 17, Valkey 8.0, Kafka 3.9 KRaft / MySQL 전환 예정)
-docker compose up -d
+# 코어 인프라 실행: MySQL 8.4(호스트 3307), Valkey 8.0, Kafka 3.9 KRaft, LocalStack 4.14.0(KMS)
+# --wait: 모든 healthcheck 통과(KMS 서명 키 생성 포함)까지 기다린다
+docker compose up -d --wait
 
 # 상태 확인
 docker compose ps
@@ -93,8 +94,8 @@ docker compose down
 | :--- | :--- | :--- |
 | **Language & Runtime** | Kotlin `2.3.21`, Java `21` | |
 | **Framework** | Spring Boot `4.1.1`, Spring Cloud `2025.1.3` | Gateway(WebFlux) + 서비스(MVC). Boot 4는 auto-configuration이 기술별 모듈로 분리됨 |
-| **Database & Lock** | PostgreSQL `17` → MySQL 전환 예정, Valkey `8.0` (Redisson `4.8.0`) | 원장 ACID, 분산 락 |
+| **Database & Lock** | MySQL `8.4`, Valkey `8.0` (Redisson `4.8.0`) | 서비스별 DB(`aegis_auth` …), 분산 락 |
 | **Messaging** | Apache Kafka `3.9.0` (KRaft) | Transactional Outbox |
-| **Key Management** | AWS KMS (로컬: LocalStack, `LOCALSTACK_AUTH_TOKEN` 필요) | JWT 서명키, ADR-0006 (구현 전) |
+| **Key Management** | AWS KMS (로컬: LocalStack `4.14.0`, 토큰 불필요) | JWT 서명키, ADR-0006 |
 | **Resilience & Observability** | Resilience4j, Micrometer, OpenTelemetry, Prometheus, Grafana | 트레이싱 연결 완료. 메트릭 수집 방식은 M7에서 결정 ([STATUS K-10](./docs/STATUS.md)) |
 | **Testing** | JUnit `6`, Kotlin Test | 경계값·장애 복구 중심 행위 검증 |

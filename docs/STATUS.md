@@ -22,7 +22,7 @@
 | `simulators:terminal-simulator` | 📋 | — | 코드 없음 |
 | `simulators:mock-van-server` | 📋 | — | 코드 없음 |
 | `infra/` (Grafana, Loki, Tempo, Prometheus, OTel Collector) | 📋 | — | 디렉터리만 있음(`.gitkeep`) |
-| `docker-compose.yml` | ✅ | — | PostgreSQL 17, Valkey 8.0, Kafka 3.9(KRaft). MySQL 전환 예정(ADR-0004) |
+| `docker-compose.yml` | ✅ | `docker compose up -d --wait`로 확인 | MySQL 8.4(호스트 3307, `aegis_auth`), Valkey 8.0, Kafka 3.9(KRaft), LocalStack 4.14.0(KMS, 기동 시 JWT 서명 키 + alias 생성). Swarm 설정 제거(ADR-0004) |
 
 ## 2. api-gateway 기능 상태
 
@@ -66,6 +66,6 @@
 
 | 결정 | 근거 |
 |---|---|
-| JWT 서명 비밀키는 KMS에 두고 서명만 위임. 로컬은 LocalStack KMS(`LOCALSTACK_AUTH_TOKEN` 필요) | ADR-0006 |
+| JWT 서명 비밀키는 KMS에 두고 서명만 위임. 로컬 KMS 인프라는 준비됨(LocalStack 4.14.0), auth-service 코드는 구현 전 | ADR-0006 |
 | 단말 컨텍스트는 baggage 하나로 전파, scopes는 `X-Terminal-Scopes`로 첫 서비스까지만 | ADR-0007 |
-| auth-service부터 MySQL 사용(전환 시점을 M6 → M3로 앞당김) | ADR-0004 3항 |
+| auth-service부터 MySQL 사용 — docker-compose 전환 완료, auth-service 코드는 구현 전 | ADR-0004 3항 |

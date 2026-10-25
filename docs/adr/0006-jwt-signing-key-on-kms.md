@@ -45,7 +45,7 @@
 
 로컬(LocalStack 초기화 스크립트, 컨테이너 기동 시 실행):
 ```bash
-# docker/localstack/init/ready.d/10-create-jwt-signing-key.sh (예정)
+# infra/localstack/init/ready.d/10-create-jwt-signing-key.sh (구현됨: 이미 있으면 건너뜀)
 awslocal kms create-key \
   --key-spec RSA_2048 \
   --key-usage SIGN_VERIFY \
@@ -114,7 +114,11 @@ aws:   # 로컬에서만 endpoint를 LocalStack으로
 
 ## 결과
 - auth-service가 침해되어도 비밀키는 유출되지 않는다. 침해 기간 동안의 서명 API 오용은 권한 회수로 끊고 KMS 감사 로그로 추적한다.
-- 로컬 개발에 LocalStack auth token이 필요하다. LocalStack 2026.03.0(2026-03-23)부터 컨테이너 기동에 `LOCALSTACK_AUTH_TOKEN`이 필요하며, KMS는 무료 Hobby 플랜(비상업용)에 포함된다. 이미지 태그는 `latest`가 아닌 고정 버전을 쓴다.
+- **LocalStack은 `4.14.0`으로 고정한다(토큰 불필요).** 2026.03.0(2026-03-23)부터 컨테이너 기동에 `LOCALSTACK_AUTH_TOKEN`(LocalStack 자체 계정)이 필요하다. 2026-10-25에 직접 확인한 결과:
+  - `2026.10.2`: 토큰 없이 exit 55 ("License activation failed").
+  - `4.14.0`: 토큰 없이 RSA_2048 `SIGN_VERIFY` 키 생성, alias, `Sign`(`DIGEST`, `RSASSA_PKCS1_V1_5_SHA_256`), `Verify`, `GetPublicKey` 동작. `GetPublicKey`로 꺼낸 공개키로 **KMS 밖(openssl)에서 서명 검증 성공**. ready.d 초기화 스크립트와 `_custom_id_` 태그 동작.
+  - 한계: 업데이트·보안 패치를 받을 수 없다. 4.14 이미지의 라이선스 조건은 확인하지 않았다(확인 필요). 앱은 AWS SDK만 쓰므로 최신 버전 + 토큰으로 바꿀 때 이미지 태그만 바꾸면 된다. 최신 버전의 무료 Hobby 플랜은 비상업용이다.
+- 무료 LocalStack은 상태를 저장하지 않아서 재기동하면 같은 키 ID로 **다른 키 material**이 만들어진다. 재기동 전에 발급한 JWT는 검증에 실패하고, `kid`(공개키 thumbprint)가 바뀌므로 gateway는 강제 갱신으로 새 공개키를 받는다. 로컬에서는 재발급으로 대응한다.
 - LocalStack은 에뮬레이터라 IAM 권한·실제 HSM 보호는 검증할 수 없다. 해당 동작은 운영 환경에서만 확인된다.
 - 확인 필요(구현 시): LocalStack 초기화 스크립트 경로·실행 시점, LocalStack KMS의 `Sign`(`DIGEST`)·`GetPublicKey` 응답 형식이 AWS와 같은지, alias가 첫 접근 이후에만 보이는 제약의 영향.
 
