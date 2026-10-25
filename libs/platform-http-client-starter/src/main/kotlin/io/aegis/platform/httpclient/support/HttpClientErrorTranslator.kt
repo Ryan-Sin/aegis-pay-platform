@@ -2,7 +2,7 @@ package io.aegis.platform.httpclient.support
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.aegis.platform.core.exception.BusinessException
-import io.aegis.platform.core.exception.ErrorResponse
+import io.aegis.platform.core.response.ErrorResponse
 import io.aegis.platform.httpclient.exception.HttpClientErrorCode
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import java.net.SocketTimeoutException

@@ -1,13 +1,14 @@
-package io.aegis.platform.core.exception
+package io.aegis.platform.core.response
 
+import io.aegis.platform.core.exception.ErrorCode
 import java.time.Instant
 
 data class ErrorResponse(
+    val timestamp: Instant = Instant.now(),
     val code: String,
     val message: String,
     val path: String,
     val errors: List<FieldErrorDetail> = emptyList(),
-    val timestamp: Instant = Instant.now(),
 ) {
     data class FieldErrorDetail(
         val field: String,

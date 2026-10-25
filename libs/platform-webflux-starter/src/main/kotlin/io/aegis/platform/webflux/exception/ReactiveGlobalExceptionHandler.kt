@@ -3,14 +3,17 @@ package io.aegis.platform.webflux.exception
 
 import io.aegis.platform.core.exception.BusinessException
 import io.aegis.platform.core.exception.CommonErrorCode
+import io.aegis.platform.core.exception.ErrorCode
 import io.aegis.platform.core.exception.ErrorMessage
-import io.aegis.platform.core.exception.ErrorResponse
+import io.aegis.platform.core.response.ErrorResponse
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.http.server.reactive.ServerHttpRequest
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.bind.support.WebExchangeBindException
+import org.springframework.web.reactive.resource.NoResourceFoundException
+import org.springframework.web.server.MethodNotAllowedException
 import org.springframework.web.server.MissingRequestValueException
 
 @RestControllerAdvice
@@ -35,6 +38,18 @@ class ReactiveGlobalExceptionHandler {
                 ),
             )
     }
+
+    @ExceptionHandler(NoResourceFoundException::class)
+    fun handleNoResourceFound(
+        ex: NoResourceFoundException,
+        request: ServerHttpRequest,
+    ): ResponseEntity<ErrorResponse> = clientError(CommonErrorCode.NOT_FOUND, request)
+
+    @ExceptionHandler(MethodNotAllowedException::class)
+    fun handleMethodNotAllowed(
+        ex: MethodNotAllowedException,
+        request: ServerHttpRequest,
+    ): ResponseEntity<ErrorResponse> = clientError(CommonErrorCode.METHOD_NOT_ALLOWED, request)
 
     @ExceptionHandler(BusinessException::class)
     fun handleBusinessException(
@@ -109,4 +124,19 @@ class ReactiveGlobalExceptionHandler {
             )
     }
 
+    private fun clientError(
+        errorCode: ErrorCode,
+        request: ServerHttpRequest,
+    ): ResponseEntity<ErrorResponse> {
+        val path = request.uri.path
+        log.warn("[{}] uri={}, method={}", errorCode.code, path, request.method)
+        return ResponseEntity
+            .status(errorCode.status)
+            .body(
+                ErrorResponse.of(
+                    errorCode = errorCode,
+                    path = path,
+                ),
+            )
+    }
 }

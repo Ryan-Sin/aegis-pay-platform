@@ -7,12 +7,17 @@ import io.aegis.platform.core.exception.ErrorCode
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.core.MethodParameter
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
+import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.mock.http.MockHttpInputMessage
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.FieldError
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MissingRequestHeaderException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 import kotlin.test.*
 
 class GlobalExceptionHandlerTest {
@@ -29,6 +34,39 @@ class GlobalExceptionHandlerTest {
         val method = this::class.java.getDeclaredMethod("dummyEndpoint", String::class.java)
         MethodParameter(method, 0)
     }
+    @Test
+    @DisplayName("없는 경로(NoResourceFoundException)는 500이 아니라 404 NOT_FOUND다")
+    fun handlesNoResourceFoundAsNotFound() {
+        val ex = NoResourceFoundException(HttpMethod.GET, "/no-such-path", "no-such-path")
+
+        val response = handler.handleNotFound(ex, request)
+
+        assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
+        assertEquals(CommonErrorCode.NOT_FOUND.code, assertNotNull(response.body).code)
+    }
+
+    @Test
+    @DisplayName("형식이 깨진 요청 본문(JSON 파싱 실패)은 500이 아니라 400 BAD_REQUEST다")
+    fun handlesUnreadableBodyAsBadRequest() {
+        val ex = HttpMessageNotReadableException("JSON parse error", MockHttpInputMessage("{".toByteArray()))
+
+        val response = handler.handleMessageNotReadable(ex, request)
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+        assertEquals(CommonErrorCode.BAD_REQUEST.code, assertNotNull(response.body).code)
+    }
+
+    @Test
+    @DisplayName("지원하지 않는 메서드는 405 METHOD_NOT_ALLOWED다")
+    fun handlesMethodNotSupported() {
+        val ex = HttpRequestMethodNotSupportedException("DELETE", listOf("GET"))
+
+        val response = handler.handleMethodNotSupported(ex, request)
+
+        assertEquals(HttpStatus.METHOD_NOT_ALLOWED, response.statusCode)
+        assertEquals(CommonErrorCode.METHOD_NOT_ALLOWED.code, assertNotNull(response.body).code)
+    }
+
     @Test
     @DisplayName("필수 헤더 누락 예외 처리 시 400 상태코드와 누락된 헤더명을 errors 목록에 담아 반환한다")
     fun handlesMissingRequestHeaderException() {
